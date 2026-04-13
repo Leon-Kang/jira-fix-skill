@@ -130,9 +130,9 @@ All environment-specific values are read from `SKILL_DIR/.env`:
 - **BB_WORKSPACE**: Your Bitbucket workspace slug
 - **MAIN_BRANCH**: Target branch for PRs (default: `develop`)
 - **TEST_URL_PATTERN**: Optional test URL pattern with `{TICKET_NUMBER}` placeholder
-- **TEST_CMD**: Custom test command (default: auto-detect from project)
-- **LINT_CMD**: Custom lint command (default: auto-detect from project)
-- **FMT_CMD**: Custom format command (default: auto-detect from project)
+- **TEST_CMD**: Custom test command (default: auto-detect from `package.json`)
+- **LINT_CMD**: Custom lint command (skipped if not set)
+- **FMT_CMD**: Custom format command (skipped if not set)
 - **JIRA_LIST_JQL**: Custom JQL for ticket listing (optional)
 - **Bitbucket repo**: auto-detected from `git remote`
 

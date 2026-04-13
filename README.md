@@ -72,7 +72,7 @@ git clone https://github.com/Leon-Kang/jira-fix-skill.git .agents/skills/jira-fi
 # Pick your platform — or use .agents/skills/ for cross-platform
 TARGET=~/.cursor/skills/jira-fix   # or ~/.claude/skills/ or ~/.codex/skills/
 mkdir -p "$TARGET/scripts"
-cp SKILL.md .env.example scripts/*.sh "$TARGET/"
+cp SKILL.md .env.example "$TARGET/"
 cp scripts/*.sh "$TARGET/scripts/"
 chmod +x "$TARGET/scripts/"*.sh
 ```
