@@ -27,8 +27,9 @@ Jira ticket → read details → create branch → implement fix → test → li
 
 Works with any AI coding agent that supports agent skills:
 
-- [Cursor](https://cursor.com) (`.cursor/skills/` or `.agents/skills/`)
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`~/.claude/skills/` or `.agents/skills/`)
+- [Cursor](https://cursor.com) — `.cursor/skills/` or `.agents/skills/`
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — `~/.claude/skills/` or `.agents/skills/`
+- [Codex CLI](https://github.com/openai/codex) — `~/.codex/skills/` or `.agents/skills/`
 - Any tool that reads `SKILL.md` files
 
 ## Prerequisites
@@ -42,18 +43,26 @@ Works with any AI coding agent that supports agent skills:
 ### Option 1: Clone into your skills directory
 
 ```bash
-# For Cursor / Claude Code (global)
-git clone https://github.com/Leon-Kang/jira-fix-skill.git ~/.agents/skills/jira-fix
+# Cursor (global)
+git clone https://github.com/Leon-Kang/jira-fix-skill.git ~/.cursor/skills/jira-fix
 
-# Or inside a project (shared with team)
+# Claude Code (global)
+git clone https://github.com/Leon-Kang/jira-fix-skill.git ~/.claude/skills/jira-fix
+
+# Codex CLI (global)
+git clone https://github.com/Leon-Kang/jira-fix-skill.git ~/.codex/skills/jira-fix
+
+# Or inside a project (shared with team, works with all platforms)
 git clone https://github.com/Leon-Kang/jira-fix-skill.git .agents/skills/jira-fix
 ```
 
 ### Option 2: Copy manually
 
 ```bash
-mkdir -p ~/.agents/skills/jira-fix
-cp -r SKILL.md .env.example scripts/ ~/.agents/skills/jira-fix/
+# Pick one — or use .agents/skills/ for cross-platform
+TARGET=~/.cursor/skills/jira-fix   # or ~/.claude/skills/ or ~/.codex/skills/
+mkdir -p "$TARGET"
+cp -r SKILL.md .env.example scripts/ "$TARGET/"
 ```
 
 ## Setup

@@ -27,8 +27,9 @@ Jira ticket → 读取详情 → 创建分支 → 实现修复 → 测试 → li
 
 兼容所有支持 Agent Skill 的 AI 编程工具：
 
-- [Cursor](https://cursor.com)（`.cursor/skills/` 或 `.agents/skills/`）
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code)（`~/.claude/skills/` 或 `.agents/skills/`）
+- [Cursor](https://cursor.com) — `.cursor/skills/` 或 `.agents/skills/`
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — `~/.claude/skills/` 或 `.agents/skills/`
+- [Codex CLI](https://github.com/openai/codex) — `~/.codex/skills/` 或 `.agents/skills/`
 - 任何读取 `SKILL.md` 的工具
 
 ## 前置要求
@@ -42,18 +43,26 @@ Jira ticket → 读取详情 → 创建分支 → 实现修复 → 测试 → li
 ### 方式一：克隆到 skills 目录
 
 ```bash
-# 全局安装（Cursor / Claude Code）
-git clone https://github.com/Leon-Kang/jira-fix-skill.git ~/.agents/skills/jira-fix
+# Cursor（全局）
+git clone https://github.com/Leon-Kang/jira-fix-skill.git ~/.cursor/skills/jira-fix
 
-# 或安装到项目中（团队共享）
+# Claude Code（全局）
+git clone https://github.com/Leon-Kang/jira-fix-skill.git ~/.claude/skills/jira-fix
+
+# Codex CLI（全局）
+git clone https://github.com/Leon-Kang/jira-fix-skill.git ~/.codex/skills/jira-fix
+
+# 或安装到项目中（团队共享，所有平台通用）
 git clone https://github.com/Leon-Kang/jira-fix-skill.git .agents/skills/jira-fix
 ```
 
 ### 方式二：手动复制
 
 ```bash
-mkdir -p ~/.agents/skills/jira-fix
-cp -r SKILL.md .env.example scripts/ ~/.agents/skills/jira-fix/
+# 选一个路径，或用 .agents/skills/ 跨平台通用
+TARGET=~/.cursor/skills/jira-fix   # 或 ~/.claude/skills/ 或 ~/.codex/skills/
+mkdir -p "$TARGET"
+cp -r SKILL.md .env.example scripts/ "$TARGET/"
 ```
 
 ## 配置
