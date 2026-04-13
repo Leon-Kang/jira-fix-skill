@@ -40,7 +40,15 @@ Jira ticket → 读取详情 → 创建分支 → 实现修复 → 测试 → li
 
 ## 安装
 
-### 方式一：克隆到 skills 目录
+### 方式一：npx（推荐）
+
+```bash
+npx jira-fix-skill
+```
+
+自动检测已安装的 AI 工具（Cursor / Claude Code / Codex CLI），让你选择安装位置。无需全局安装。
+
+### 方式二：克隆到 skills 目录
 
 ```bash
 # Cursor（全局）
@@ -56,7 +64,7 @@ git clone https://github.com/Leon-Kang/jira-fix-skill.git ~/.codex/skills/jira-f
 git clone https://github.com/Leon-Kang/jira-fix-skill.git .agents/skills/jira-fix
 ```
 
-### 方式二：手动复制
+### 方式三：手动复制
 
 ```bash
 # 选一个路径，或用 .agents/skills/ 跨平台通用
@@ -146,6 +154,9 @@ jira-fix-skill/
 ├── SKILL.md          # Skill 定义文件（AI 读取）
 ├── .env.example      # 配置模板
 ├── .env              # 你的密钥（已 gitignore）
+├── package.json      # npm 包（支持 npx 安装）
+├── bin/
+│   └── install.sh    # 交互式安装脚本
 ├── scripts/
 │   ├── jira-api.sh   # Jira API：list、get、comment
 │   └── bb-pr.sh      # Bitbucket：创建 Draft PR

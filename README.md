@@ -40,7 +40,15 @@ Works with any AI coding agent that supports agent skills:
 
 ## Installation
 
-### Option 1: Clone into your skills directory
+### Option 1: npx (recommended)
+
+```bash
+npx jira-fix-skill
+```
+
+Auto-detects your installed AI tools (Cursor / Claude Code / Codex CLI) and lets you pick where to install. No global install needed.
+
+### Option 2: Clone into your skills directory
 
 ```bash
 # Cursor (global)
@@ -56,7 +64,7 @@ git clone https://github.com/Leon-Kang/jira-fix-skill.git ~/.codex/skills/jira-f
 git clone https://github.com/Leon-Kang/jira-fix-skill.git .agents/skills/jira-fix
 ```
 
-### Option 2: Copy manually
+### Option 3: Copy manually
 
 ```bash
 # Pick one — or use .agents/skills/ for cross-platform
@@ -148,6 +156,9 @@ jira-fix-skill/
 ├── SKILL.md          # Skill definition (the AI reads this)
 ├── .env.example      # Template for configuration
 ├── .env              # Your secrets (gitignored)
+├── package.json      # npm package (enables npx install)
+├── bin/
+│   └── install.sh    # Interactive installer
 ├── scripts/
 │   ├── jira-api.sh   # Jira API: list, get, comment
 │   └── bb-pr.sh      # Bitbucket: create draft PR
