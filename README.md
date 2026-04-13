@@ -1,5 +1,7 @@
 # jira-fix-skill
 
+English | [中文](./README.zh-CN.md)
+
 An AI agent skill that automates the Jira → Code → Bitbucket PR workflow.
 
 Tell your AI agent "fix PROJ-123" and it will fetch the ticket, create a branch, implement the fix, run tests, create a draft PR on Bitbucket, and propose a Jira comment — all in one flow.
