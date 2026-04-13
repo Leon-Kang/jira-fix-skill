@@ -9,6 +9,10 @@ Automates: Jira ticket → code fix → Bitbucket draft PR → Jira comment → 
 
 **Scope**: Only comments on Jira. Never changes ticket status. PO manages lifecycle. PRs are always draft — human reviews before merge.
 
+## SKILL_DIR resolution
+
+`SKILL_DIR` refers to the directory where this `SKILL.md` file lives. Determine it by resolving the path of this file's parent directory. All relative paths in this document (`.env`, `scripts/`) are relative to `SKILL_DIR`.
+
 ## Prerequisites
 
 - `jq`, `curl`, `git` available in PATH (pre-installed on macOS)
@@ -126,6 +130,10 @@ All environment-specific values are read from `SKILL_DIR/.env`:
 - **BB_WORKSPACE**: Your Bitbucket workspace slug
 - **MAIN_BRANCH**: Target branch for PRs (default: `develop`)
 - **TEST_URL_PATTERN**: Optional test URL pattern with `{TICKET_NUMBER}` placeholder
+- **TEST_CMD**: Custom test command (default: auto-detect from project)
+- **LINT_CMD**: Custom lint command (default: auto-detect from project)
+- **FMT_CMD**: Custom format command (default: auto-detect from project)
+- **JIRA_LIST_JQL**: Custom JQL for ticket listing (optional)
 - **Bitbucket repo**: auto-detected from `git remote`
 
 ## Jira access: MCP-first, bash-fallback
@@ -156,6 +164,14 @@ Use when MCP is not available:
 
 ## Workflows
 
+### Resolving commands for test, lint, format
+
+Before running test/lint/format, check `SKILL_DIR/.env` for custom overrides:
+
+- **TEST_CMD**: if set, use it. Otherwise auto-detect: look for `package.json` scripts — prefer `yarn run test` if `test` script exists, else `npm test`.
+- **LINT_CMD**: if set, use it. Otherwise skip lint (not all projects have one).
+- **FMT_CMD**: if set, use it. Otherwise skip format (not all projects have one).
+
 ### 1. List my tickets
 
 When user says things like "show my tickets", "what should I work on", "my Jira tasks":
@@ -170,6 +186,8 @@ Present the tickets clearly. Let the user pick one, or suggest the highest-prior
 
 When user says "fix PROJ-123" or picks a ticket from the list:
 
+Read `MAIN_BRANCH` from `SKILL_DIR/.env` (default: `develop`). Use this value wherever `MAIN_BRANCH` appears below.
+
 **Step 1 — Fetch ticket details:**
 
 **Jira: get ticket** (MCP or bash)
@@ -180,28 +198,32 @@ Read the output — it contains summary, type, priority, and description. Share 
 
 This step MUST complete before reading, exploring, or modifying any code:
 ```bash
-# Save any uncommitted work (remember to restore later if needed)
 STASHED=false
 if ! git diff --quiet HEAD 2>/dev/null || [ -n "$(git ls-files --others --exclude-standard)" ]; then
   git stash --include-untracked && STASHED=true
 fi
 
-git checkout develop
-git pull origin develop
+git checkout MAIN_BRANCH
+git pull origin MAIN_BRANCH
 
 # Check if branch already exists
-BRANCH="fix/TICKET-KEY-short-description"
+BRANCH="<prefix>/TICKET-KEY-short-description"
 if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
   git checkout "${BRANCH}"
-  git merge develop  # bring branch up to date
+  git merge MAIN_BRANCH
 else
   git checkout -b "${BRANCH}"
 fi
 
-# Restore stashed work if it was on develop (skip if switching context)
 $STASHED && echo "NOTE: You have stashed changes. Run 'git stash pop' if you need them."
 ```
-Use `feature/` prefix for Story/Feature types. Generate a short kebab-case suffix from the ticket summary.
+
+Branch prefix by ticket type:
+- **Bug** → `fix/TICKET-KEY-short-desc` (e.g. `fix/PROJ-123-header-overlap`)
+- **Story / Feature** → `feature/TICKET-KEY-short-desc` (e.g. `feature/PROJ-456-user-avatar`)
+- **Other** (Task, Chore, etc.) → `fix/TICKET-KEY-short-desc`
+
+Generate a short kebab-case suffix from the ticket summary (3-5 words max).
 
 **Step 3 — Implement the fix:**
 
@@ -214,34 +236,25 @@ Only start after the feature branch is checked out:
 - Keep changes minimal and focused on the ticket
 
 **Step 4 — Test (auto-retry up to 3 times):**
-Run `yarn run test` (or `yarn run jest --no-cache --runInBand path/to/test.spec.ts` for specific test files). If tests fail, read the output and fix. Retry up to 3 times. If still failing after 3 attempts, tell the user and ask whether to comment on Jira.
+
+Run the test command (see "Resolving commands" above). If tests fail, read the output and fix. Retry up to 3 times. If still failing after 3 attempts, tell the user and ask whether to comment on Jira.
 
 **Step 5 — Format & Lint (must pass before commit):**
 
-Run dprint on all changed files (excluding deleted), then run the CI lint script:
-```bash
-# Format changed files (--diff-filter=d excludes deleted files)
-yarn run dprint fmt --allow-no-files $(git diff --diff-filter=d --name-only develop -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.json')
+Run format command then lint command (see "Resolving commands" above). Only run these if the commands are available (configured in `.env` or auto-detected).
 
-# Ensure origin/develop is fresh before lint comparison
-git fetch origin develop
-
-# Full lint check (TS types + Biome lint + format verification)
-scripts/changes-lint.sh --merge-base origin/develop
-```
-
-If lint errors are found, fix them and re-run until clean. Do NOT skip this step — PRs that fail CI lint will be rejected.
+If lint errors are found, fix them and re-run until clean. Do NOT skip this step if commands are available — PRs that fail CI lint will be rejected.
 
 **Step 6 — Commit and push:**
-Use the project commit convention: `type(package): TICKET-KEY module - description`
+Use conventional commit format: `type(scope): TICKET-KEY module - description`
 
 - **type**: `feat` for Story/Feature, `fix` for Bug, `refactor`/`chore`/`docs` as appropriate
-- **package**: `client` or `server`
-- **module**: the feature/module within the package — e.g. `nav`, `chat`, `profile`, `payment`, `component`
+- **scope**: the top-level package or area of the project (e.g. `client`, `server`, `api`, `web`)
+- **module**: the feature/module within the scope — e.g. `nav`, `chat`, `profile`, `payment`
 
 Examples:
-- `fix(client): PROJ-123 nav - layout style issue`
-- `feat(server): PROJ-456 ssr - conditional SSR by route config`
+- `fix(client): PROJ-123 nav - fix header overlap on mobile`
+- `feat(server): PROJ-456 auth - add OAuth2 support`
 
 ```bash
 git add -A
@@ -251,18 +264,13 @@ git push -u origin BRANCH
 
 **Step 7 — Create Bitbucket draft PR:**
 
-PR title MUST follow the project convention: `type(package): TICKET-KEY module - description`
-
-Examples:
-- `fix(client): PROJ-123 nav - layout style issue`
-- `feat(client): PROJ-456 component - add brand-primary type`
-- `feat(server): PROJ-789 ssr - conditional SSR by route config`
+PR title follows the same convention as commit messages: `type(scope): TICKET-KEY module - description`
 
 ```bash
-bash SKILL_DIR/scripts/bb-pr.sh TICKET-KEY "type(package): TICKET-KEY module - description" BRANCH "DESCRIPTION"
+bash SKILL_DIR/scripts/bb-pr.sh TICKET-KEY "type(scope): TICKET-KEY module - description" BRANCH "PR description text"
 ```
 
-The script will prefix `[DRAFT]` to the title. Share the PR URL with the user.
+The script will prefix `[DRAFT]` to the title. If description is omitted, no description body is sent. Share the PR URL with the user.
 
 **Step 8 — Propose Jira comment (DO NOT post automatically):**
 
@@ -283,6 +291,8 @@ Only call **Jira: add comment** (MCP or bash) if the user explicitly confirms.
 
 When user says "continue fixing PROJ-123", "apply feedback", "address the review comments":
 
+Read `MAIN_BRANCH` from `SKILL_DIR/.env` (default: `develop`).
+
 **Step 1 — Get latest feedback:**
 
 **Jira: get ticket** (MCP or bash)
@@ -291,19 +301,15 @@ When user says "continue fixing PROJ-123", "apply feedback", "address the review
 Find and checkout the branch matching the ticket key.
 
 **Step 3 — Make targeted fixes:**
-Read the feedback, check current changes with `git diff develop`, make only the fixes that were requested. Do NOT rewrite from scratch.
+Read the feedback, check current changes with `git diff MAIN_BRANCH`, make only the fixes that were requested. Do NOT rewrite from scratch.
 
 **Step 4 — Format & Lint:**
-```bash
-yarn run dprint fmt --allow-no-files $(git diff --diff-filter=d --name-only develop -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.json')
-git fetch origin develop
-scripts/changes-lint.sh --merge-base origin/develop
-```
+Run format and lint commands if available (see "Resolving commands" above).
 
 **Step 5 — Push and reply:**
 ```bash
 git add -A
-git commit -m "fix(package): TICKET-KEY module - address review feedback"
+git commit -m "fix(scope): TICKET-KEY module - address review feedback"
 git push --force-with-lease origin BRANCH
 ```
 
@@ -328,6 +334,6 @@ Fetch the ticket (MCP or bash), read the codebase, output a detailed fix plan in
 
 1. **Never change Jira ticket status** — only add comments
 2. **PRs are always draft** — user decides when to publish
-3. **Commit messages reference the ticket** — always include `refs TICKET-KEY`
+3. **Commit messages always include the ticket key** — format: `type(scope): TICKET-KEY module - description`
 4. **Ask before acting on ambiguous tickets** — if the description is vague, ask the user for clarification before coding
 5. **Feedback fixes are surgical** — don't rewrite the whole thing, only address what was flagged

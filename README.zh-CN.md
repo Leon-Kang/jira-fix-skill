@@ -32,6 +32,8 @@ Jira ticket → 读取详情 → 创建分支 → 实现修复 → 测试 → li
 - [Codex CLI](https://github.com/openai/codex) — `~/.codex/skills/` 或 `.agents/skills/`
 - 任何读取 `SKILL.md` 的工具
 
+> **注意**：仅支持 macOS 和 Linux，不支持 Windows（依赖 bash 脚本）。
+
 ## 前置要求
 
 - `jq`、`curl`、`git` 在 PATH 中（macOS 自带）
@@ -46,7 +48,7 @@ Jira ticket → 读取详情 → 创建分支 → 实现修复 → 测试 → li
 npx jira-fix-skill
 ```
 
-自动检测已安装的 AI 工具（Cursor / Claude Code / Codex CLI），让你选择安装位置。无需全局安装。
+自动检测已安装的 AI 工具（Cursor / Claude Code / Codex CLI），让你选择安装位置。无需全局安装。如果已有旧版本，会原地升级并保留 `.env` 配置。
 
 ### 方式二：克隆到 skills 目录
 
@@ -67,10 +69,12 @@ git clone https://github.com/Leon-Kang/jira-fix-skill.git .agents/skills/jira-fi
 ### 方式三：手动复制
 
 ```bash
-# 选一个路径，或用 .agents/skills/ 跨平台通用
+# 选一个平台路径，或用 .agents/skills/ 跨平台通用
 TARGET=~/.cursor/skills/jira-fix   # 或 ~/.claude/skills/ 或 ~/.codex/skills/
-mkdir -p "$TARGET"
-cp -r SKILL.md .env.example scripts/ "$TARGET/"
+mkdir -p "$TARGET/scripts"
+cp SKILL.md .env.example "$TARGET/"
+cp scripts/*.sh "$TARGET/scripts/"
+chmod +x "$TARGET/scripts/"*.sh
 ```
 
 ## 配置
@@ -90,7 +94,7 @@ AI agent 会在首次使用时自动引导你完成配置。只需说 "show my t
 ### 手动配置
 
 ```bash
-cd ~/.agents/skills/jira-fix
+cd <安装目录>    # 例如 ~/.cursor/skills/jira-fix
 cp .env.example .env
 chmod 600 .env
 ```
@@ -138,6 +142,10 @@ TEST_URL_PATTERN=
 | `BB_WORKSPACE` | 是 | Bitbucket workspace slug |
 | `MAIN_BRANCH` | 否 | PR 目标分支（默认 `develop`） |
 | `TEST_URL_PATTERN` | 否 | 测试环境 URL，支持 `{TICKET_NUMBER}` 占位符 |
+| `TEST_CMD` | 否 | 自定义测试命令（默认自动检测） |
+| `LINT_CMD` | 否 | 自定义 lint 命令（未设置则跳过） |
+| `FMT_CMD` | 否 | 自定义格式化命令（未设置则跳过） |
+| `JIRA_LIST_JQL` | 否 | 自定义 JQL 覆盖默认的 ticket 查询 |
 
 ## 工作原理
 
@@ -176,6 +184,18 @@ jira-fix-skill/
 JIRA_LIST_JQL="project = MYPROJ AND assignee = currentUser() AND sprint in openSprints() ORDER BY priority ASC"
 ```
 
+### 自定义测试 / lint / 格式化命令
+
+在 `.env` 中设置以匹配你项目的工具链：
+
+```bash
+TEST_CMD=yarn run test
+FMT_CMD=yarn run dprint fmt --allow-no-files
+LINT_CMD=scripts/changes-lint.sh --merge-base origin/develop
+```
+
+未设置时，skill 会从 `package.json` 自动检测测试命令，lint / 格式化若未配置则跳过。
+
 ### 测试环境 URL
 
 如果你的 CI 会部署预览环境，设置 `TEST_URL_PATTERN`：
@@ -185,6 +205,17 @@ TEST_URL_PATTERN=https://preview-{TICKET_NUMBER}.your-app.dev/
 ```
 
 `{TICKET_NUMBER}` 会被替换为 ticket key 的数字部分（如 `PROJ-456` → `456`）。
+
+## 升级
+
+再次运行 `npx jira-fix-skill` 即可——会检测已有安装并原地升级，保留 `.env` 配置。
+
+或者用 git：
+
+```bash
+cd <安装目录>
+git pull
+```
 
 ## License
 

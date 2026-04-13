@@ -5,6 +5,12 @@
   "bin": {
     "jira-fix-skill": "./bin/install.sh"
   },
+  "files": [
+    "bin/",
+    "scripts/",
+    "SKILL.md",
+    ".env.example"
+  ],
   "keywords": [
     "jira",
     "bitbucket",
@@ -20,5 +26,9 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/Leon-Kang/jira-fix-skill.git"
-  }
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ]
 }

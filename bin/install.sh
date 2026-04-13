@@ -14,9 +14,19 @@ LABELS=()
 
 [[ -d "$HOME/.cursor" ]] && { PATHS+=("$HOME/.cursor/skills/$SKILL_NAME"); LABELS+=("Cursor (global)"); }
 [[ -d "$HOME/.claude" ]] && { PATHS+=("$HOME/.claude/skills/$SKILL_NAME"); LABELS+=("Claude Code (global)"); }
-[[ -d "$HOME/.codex" ]] && { PATHS+=("$HOME/.codex/skills/$SKILL_NAME"); LABELS+=("Codex CLI (global)"); }
-PATHS+=(".agents/skills/$SKILL_NAME")
-LABELS+=("Project (.agents/)")
+[[ -d "$HOME/.codex" ]]  && { PATHS+=("$HOME/.codex/skills/$SKILL_NAME"); LABELS+=("Codex CLI (global)"); }
+
+GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+if [[ -n "$GIT_ROOT" ]]; then
+  PATHS+=("$GIT_ROOT/.agents/skills/$SKILL_NAME")
+  LABELS+=("Project ($GIT_ROOT/.agents/)")
+fi
+
+if [[ ${#PATHS[@]} -eq 0 ]]; then
+  echo "  No supported AI tool detected and not inside a git repo."
+  echo "  Install manually: copy SKILL.md, .env.example, scripts/ to your skills directory."
+  exit 1
+fi
 
 echo "  Install targets:"
 echo ""
@@ -46,6 +56,9 @@ esac
 install_to() {
   local dest="$1"
   local label="$2"
+  local is_upgrade=false
+
+  [[ -f "$dest/SKILL.md" ]] && is_upgrade=true
 
   mkdir -p "$dest/scripts"
   cp "$PKG_DIR/SKILL.md" "$dest/"
@@ -59,7 +72,11 @@ install_to() {
     chmod 600 "$dest/.env"
   fi
 
-  echo "  ✓ Installed to $dest ($label)"
+  if $is_upgrade; then
+    echo "  ↑ Upgraded $dest ($label) — .env preserved"
+  else
+    echo "  ✓ Installed to $dest ($label)"
+  fi
 }
 
 echo ""

@@ -25,12 +25,12 @@ BB_REPO=$(git remote get-url origin 2>/dev/null \
 TICKET="${1:?Usage: bb-pr.sh TICKET TITLE SOURCE_BRANCH [DESCRIPTION]}"
 TITLE="${2:?title}"
 SOURCE="${3:?source branch}"
-DESC="${4:-Auto-generated PR for ${TICKET}}"
+DESC="${4:-}"
 
 PAYLOAD=$(jq -n \
   --arg t "[DRAFT] ${TITLE}" --arg d "$DESC" \
   --arg s "$SOURCE" --arg dest "${MAIN_BRANCH}" \
-  '{title:$t,description:$d,source:{branch:{name:$s}},destination:{branch:{name:$dest}},close_source_branch:true}')
+  '{title:$t,source:{branch:{name:$s}},destination:{branch:{name:$dest}},close_source_branch:true} | if $d != "" then .description = $d else . end')
 
 TMPBODY=$(mktemp)
 trap 'rm -f "$TMPBODY"' EXIT
@@ -43,8 +43,16 @@ STATUS=$(curl -s --max-time 30 -w '%{http_code}' -o "$TMPBODY" \
 if [[ "$STATUS" -ge 200 && "$STATUS" -lt 300 ]] 2>/dev/null; then
   PR_URL=$(jq -r '.links.html.href // "unknown"' "$TMPBODY")
   PR_ID=$(jq -r '.id // "unknown"' "$TMPBODY")
-  echo "PR_URL=${PR_URL}"
-  echo "PR_ID=${PR_ID}"
+  PR_TITLE=$(jq -r '.title // "unknown"' "$TMPBODY")
+  PR_DEST=$(jq -r '.destination.branch.name // "unknown"' "$TMPBODY")
+  echo "--- PR Created ---"
+  echo "ID:     ${PR_ID}"
+  echo "Title:  ${PR_TITLE}"
+  echo "URL:    ${PR_URL}"
+  echo "Source: ${SOURCE}"
+  echo "Target: ${PR_DEST}"
+  echo "Status: DRAFT"
+  echo "---"
 else
   MSG=$(jq -r '.error.message // .error // .message // empty' "$TMPBODY" 2>/dev/null)
   echo "ERROR: Bitbucket API returned HTTP ${STATUS}" >&2

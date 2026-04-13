@@ -32,6 +32,8 @@ Works with any AI coding agent that supports agent skills:
 - [Codex CLI](https://github.com/openai/codex) — `~/.codex/skills/` or `.agents/skills/`
 - Any tool that reads `SKILL.md` files
 
+> **Note**: Requires macOS or Linux. Windows is not supported (bash scripts).
+
 ## Prerequisites
 
 - `jq`, `curl`, `git` in PATH (pre-installed on macOS)
@@ -46,7 +48,7 @@ Works with any AI coding agent that supports agent skills:
 npx jira-fix-skill
 ```
 
-Auto-detects your installed AI tools (Cursor / Claude Code / Codex CLI) and lets you pick where to install. No global install needed.
+Auto-detects your installed AI tools (Cursor / Claude Code / Codex CLI) and lets you pick where to install. No global install needed. If you already have a previous version, it upgrades in-place while preserving your `.env`.
 
 ### Option 2: Clone into your skills directory
 
@@ -67,10 +69,12 @@ git clone https://github.com/Leon-Kang/jira-fix-skill.git .agents/skills/jira-fi
 ### Option 3: Copy manually
 
 ```bash
-# Pick one — or use .agents/skills/ for cross-platform
+# Pick your platform — or use .agents/skills/ for cross-platform
 TARGET=~/.cursor/skills/jira-fix   # or ~/.claude/skills/ or ~/.codex/skills/
-mkdir -p "$TARGET"
-cp -r SKILL.md .env.example scripts/ "$TARGET/"
+mkdir -p "$TARGET/scripts"
+cp SKILL.md .env.example scripts/*.sh "$TARGET/"
+cp scripts/*.sh "$TARGET/scripts/"
+chmod +x "$TARGET/scripts/"*.sh
 ```
 
 ## Setup
@@ -92,7 +96,7 @@ Here's what happens behind the scenes:
 ### Manual setup (if you prefer)
 
 ```bash
-cd ~/.agents/skills/jira-fix
+cd <your-install-directory>    # e.g. ~/.cursor/skills/jira-fix
 cp .env.example .env
 chmod 600 .env
 ```
@@ -140,6 +144,10 @@ Just talk to your AI agent naturally:
 | `BB_WORKSPACE` | Yes | Bitbucket workspace slug |
 | `MAIN_BRANCH` | No | Target branch for PRs (default: `develop`) |
 | `TEST_URL_PATTERN` | No | Test URL with `{TICKET_NUMBER}` placeholder |
+| `TEST_CMD` | No | Custom test command (default: auto-detect) |
+| `LINT_CMD` | No | Custom lint command (default: skip if not set) |
+| `FMT_CMD` | No | Custom format command (default: skip if not set) |
+| `JIRA_LIST_JQL` | No | Custom JQL to override default ticket query |
 
 ## How it works
 
@@ -177,6 +185,18 @@ Set `JIRA_LIST_JQL` in your `.env` to override the default ticket query:
 JIRA_LIST_JQL="project = MYPROJ AND assignee = currentUser() AND sprint in openSprints() ORDER BY priority ASC"
 ```
 
+### Custom test / lint / format commands
+
+Set these in `.env` to match your project's tooling:
+
+```bash
+TEST_CMD=yarn run test
+FMT_CMD=yarn run dprint fmt --allow-no-files
+LINT_CMD=scripts/changes-lint.sh --merge-base origin/develop
+```
+
+If not set, the skill auto-detects test commands from `package.json` and skips lint/format if no command is configured.
+
 ### Test URL
 
 If your CI deploys preview environments, set `TEST_URL_PATTERN`:
@@ -186,6 +206,17 @@ TEST_URL_PATTERN=https://preview-{TICKET_NUMBER}.your-app.dev/
 ```
 
 The `{TICKET_NUMBER}` placeholder is replaced with the numeric part of the ticket key (e.g. `PROJ-456` → `456`).
+
+## Upgrading
+
+Run `npx jira-fix-skill` again — it detects existing installs and upgrades while preserving your `.env`.
+
+Or with git:
+
+```bash
+cd <your-install-directory>
+git pull
+```
 
 ## License
 
