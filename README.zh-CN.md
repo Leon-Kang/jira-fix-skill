@@ -58,56 +58,46 @@ cp -r SKILL.md .env.example scripts/ ~/.agents/skills/jira-fix/
 
 ## 配置
 
-### 1. 创建 `.env`
+AI agent 会在首次使用时自动引导你完成配置。只需说 "show my tickets"，它会带你走完整个流程。
+
+### 交互式配置（AI 自动引导）
+
+1. **要求一个 Jira ticket 链接** — 从浏览器粘贴任意 ticket 地址，agent 自动提取 Jira 域名和项目前缀。
+2. **自动检测 Bitbucket workspace** — 从 `git remote` 读取 workspace slug。
+3. **自动检测默认分支** — 检查 `origin/HEAD` 获取 `main` 或 `develop`。
+4. **检查 Atlassian MCP** — 如果已安装，直接使用（更快）。如果未安装，提示是否需要安装（可选）。
+5. **引导创建 Token** — 带你到 https://id.atlassian.com/manage-profile/security 创建两个 API Token。
+6. **写入 `.env`** — 将所有配置保存到 gitignored 的 `.env` 文件。
+7. **验证** — 运行测试查询确认一切正常。
+
+### 手动配置
 
 ```bash
-cd ~/.agents/skills/jira-fix   # 或你安装的位置
+cd ~/.agents/skills/jira-fix
 cp .env.example .env
 chmod 600 .env
 ```
 
-### 2. 创建 API Token
+在 https://id.atlassian.com/manage-profile/security → **"Create API token with scopes"** 创建两个 Token：
 
-打开 https://id.atlassian.com/manage-profile/security
+| Token | App | Scopes |
+|-------|-----|--------|
+| `ATLASSIAN_API_TOKEN` | Jira | （默认） |
+| `BB_API_TOKEN` | Bitbucket | Repositories R/W、Pull Requests R/W |
 
-点击 **"Create and manage API tokens"** → **"Create API token with scopes"**：
-
-#### Jira Token（`ATLASSIAN_API_TOKEN`）
-
-| 字段 | 值 |
-|------|-----|
-| Name | `jira-fix-jira` |
-| App | Jira |
-
-#### Bitbucket Token（`BB_API_TOKEN`）
-
-| 字段 | 值 |
-|------|-----|
-| Name | `jira-fix-bitbucket` |
-| App | **Bitbucket** |
-| Scopes | **Repositories Read + Write**、**Pull Requests Read + Write** |
-
-> 两个 Token 在同一个 Atlassian 页面创建，格式相似但权限范围不同。
-
-### 3. 填写 `.env`
+填写 `.env`：
 
 ```bash
 ATLASSIAN_EMAIL=you@example.com
-ATLASSIAN_API_TOKEN=your-jira-token      # 第 2 步创建的 Jira token
-BB_API_TOKEN=your-bitbucket-token        # 第 2 步创建的 Bitbucket token
+ATLASSIAN_API_TOKEN=your-jira-token
+BB_API_TOKEN=your-bitbucket-token
 JIRA_URL=https://your-site.atlassian.net
 BB_WORKSPACE=your-workspace-slug
-MAIN_BRANCH=develop                     # 或 main
-TEST_URL_PATTERN=                       # 可选，例如 https://test-{TICKET_NUMBER}.example.com
+MAIN_BRANCH=develop
+TEST_URL_PATTERN=
 ```
 
-### 4. 验证
-
-```bash
-bash scripts/jira-api.sh list
-```
-
-能看到你的 tickets 就说明配置成功。
+验证：`bash scripts/jira-api.sh list`
 
 ## 使用方法
 

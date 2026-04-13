@@ -58,56 +58,48 @@ cp -r SKILL.md .env.example scripts/ ~/.agents/skills/jira-fix/
 
 ## Setup
 
-### 1. Create your `.env`
+The AI agent handles most of the setup interactively on first use. Just say "show my tickets" and it will walk you through the process.
+
+Here's what happens behind the scenes:
+
+### Interactive setup (handled by the AI)
+
+1. **Asks for a Jira ticket URL** — paste any ticket link from your browser. The agent auto-extracts your Jira domain and project prefix.
+2. **Auto-detects Bitbucket workspace** — reads `git remote` to find your workspace slug.
+3. **Auto-detects default branch** — checks `origin/HEAD` for `main` or `develop`.
+4. **Checks for Atlassian MCP** — if installed, uses it for faster Jira access. If not, offers guidance to install it (optional).
+5. **Guides token creation** — walks you through creating two API tokens at https://id.atlassian.com/manage-profile/security
+6. **Writes `.env`** — saves everything to a gitignored `.env` file.
+7. **Verifies** — runs a test query to confirm everything works.
+
+### Manual setup (if you prefer)
 
 ```bash
-cd ~/.agents/skills/jira-fix   # or wherever you installed
+cd ~/.agents/skills/jira-fix
 cp .env.example .env
 chmod 600 .env
 ```
 
-### 2. Create API tokens
+Create two API tokens at https://id.atlassian.com/manage-profile/security → **"Create API token with scopes"**:
 
-Go to https://id.atlassian.com/manage-profile/security
+| Token | App | Scopes |
+|-------|-----|--------|
+| `ATLASSIAN_API_TOKEN` | Jira | (default) |
+| `BB_API_TOKEN` | Bitbucket | Repositories R/W, Pull Requests R/W |
 
-Click **"Create and manage API tokens"** → **"Create API token with scopes"**:
-
-#### Jira token (`ATLASSIAN_API_TOKEN`)
-
-| Field | Value |
-|-------|-------|
-| Name | `jira-fix-jira` |
-| App | Jira |
-
-#### Bitbucket token (`BB_API_TOKEN`)
-
-| Field | Value |
-|-------|-------|
-| Name | `jira-fix-bitbucket` |
-| App | **Bitbucket** |
-| Scopes | **Repositories Read + Write**, **Pull Requests Read + Write** |
-
-> Both tokens are created on the same Atlassian page. They look similar but have different scopes.
-
-### 3. Fill in `.env`
+Fill in `.env`:
 
 ```bash
 ATLASSIAN_EMAIL=you@example.com
-ATLASSIAN_API_TOKEN=your-jira-token      # Jira token from step 2
-BB_API_TOKEN=your-bitbucket-token        # Bitbucket token from step 2
+ATLASSIAN_API_TOKEN=your-jira-token
+BB_API_TOKEN=your-bitbucket-token
 JIRA_URL=https://your-site.atlassian.net
 BB_WORKSPACE=your-workspace-slug
-MAIN_BRANCH=develop                     # or main
-TEST_URL_PATTERN=                       # optional, e.g. https://test-{TICKET_NUMBER}.example.com
+MAIN_BRANCH=develop
+TEST_URL_PATTERN=
 ```
 
-### 4. Verify
-
-```bash
-bash scripts/jira-api.sh list
-```
-
-If you see your tickets, you're all set.
+Verify: `bash scripts/jira-api.sh list`
 
 ## Usage
 

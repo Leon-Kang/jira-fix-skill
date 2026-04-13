@@ -16,40 +16,107 @@ Automates: Jira ticket → code fix → Bitbucket draft PR → Jira comment → 
 
 ### First-time setup
 
-Before first use, check if `SKILL_DIR/.env` exists. If not, guide the user through these steps:
+Before first use, check if `SKILL_DIR/.env` exists and contains valid (non-placeholder) values. If not, run the interactive setup below.
 
-**Step 1 — Create .env from template:**
+**Step 1 — Ask for a Jira ticket URL:**
+
+Ask the user: "Paste a link to any Jira ticket (e.g. from your browser address bar)."
+
+The user will provide something like:
+`https://acme.atlassian.net/browse/PROJ-123` or `https://acme.atlassian.net/jira/software/c/projects/PROJ/boards/1?assignee=...`
+
+Extract from the URL:
+- **JIRA_URL**: the origin part → `https://acme.atlassian.net`
+- **Project prefix**: the ticket key prefix → `PROJ` (store this for later use in branch naming and JQL)
+
+**Step 2 — Auto-detect Bitbucket workspace:**
+
+```bash
+git remote get-url origin
+```
+
+If the remote contains `bitbucket.org`, extract the workspace:
+- `git@bitbucket.org:myworkspace/myrepo.git` → `BB_WORKSPACE=myworkspace`
+- `https://bitbucket.org/myworkspace/myrepo.git` → `BB_WORKSPACE=myworkspace`
+
+If not a Bitbucket remote, ask the user for `BB_WORKSPACE`.
+
+**Step 3 — Detect default branch:**
+
+```bash
+git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'
+```
+
+Use the result as `MAIN_BRANCH`. Fall back to `develop` if detection fails.
+
+**Step 4 — Check for Atlassian MCP:**
+
+Check if `plugin-atlassian-atlassian` MCP server is available by attempting a lightweight call:
+
+```
+CallMcpTool(server:"plugin-atlassian-atlassian", toolName:"getAccessibleAtlassianResources", arguments:{})
+```
+
+- **If MCP responds**: Tell the user "Atlassian MCP is connected. Jira operations will use MCP (faster, no extra token needed for read)."
+- **If MCP is not available**: Tell the user:
+  > Atlassian MCP is not installed. The skill will use direct API calls instead (works fine, just needs an API token).
+  >
+  > To install the MCP for a better experience:
+  > 1. Open Cursor Settings → MCP
+  > 2. Search for "Atlassian" and enable it
+  > 3. Follow the OAuth login prompt
+  >
+  > Would you like to continue without MCP, or set it up first?
+
+  Proceed with setup regardless of the answer — the skill works with or without MCP.
+
+**Step 5 — Create .env:**
+
 ```bash
 cp SKILL_DIR/.env.example SKILL_DIR/.env
 chmod 600 SKILL_DIR/.env
 ```
 
-The `.env` file is gitignored and will not be committed.
+Then write the auto-detected values into `SKILL_DIR/.env`:
 
-**Step 2 — Create tokens:**
+```bash
+ATLASSIAN_EMAIL=        # ask the user
+ATLASSIAN_API_TOKEN=    # ask the user (see token creation below)
+BB_API_TOKEN=           # ask the user (see token creation below)
+JIRA_URL=               # auto-detected from step 1
+BB_WORKSPACE=           # auto-detected from step 2
+MAIN_BRANCH=            # auto-detected from step 3
+TEST_URL_PATTERN=       # ask the user (optional)
+```
 
-Both tokens are created on the same page: https://id.atlassian.com/manage-profile/security
+**Step 6 — Guide token creation:**
 
-Click **"Create and manage API tokens"**, then **"Create API token with scopes"**:
+Ask the user for their Atlassian email, then guide them to create tokens:
 
-1. **ATLASSIAN_API_TOKEN** (for Jira):
-   - Name: `jira-fix-jira`
-   - App: Jira (or no specific app scope)
+> Go to https://id.atlassian.com/manage-profile/security
+>
+> Click **"Create and manage API tokens"** → **"Create API token with scopes"**:
+>
+> **Token 1 — Jira** (`ATLASSIAN_API_TOKEN`):
+> - Name: `jira-fix-jira`
+> - App: Jira
+>
+> **Token 2 — Bitbucket** (`BB_API_TOKEN`):
+> - Name: `jira-fix-bitbucket`
+> - App: **Bitbucket**
+> - Scopes: **Repositories Read + Write**, **Pull Requests Read + Write**
+>
+> Both tokens are created on the same page. They look similar but have different scopes.
 
-2. **BB_API_TOKEN** (for Bitbucket PR):
-   - Name: `jira-fix-bitbucket`
-   - App: **Bitbucket**
-   - Scopes: **Repositories Read + Write**, **Pull Requests Read + Write**
+Collect the email and both tokens from the user, then write them into `SKILL_DIR/.env`.
 
-**Step 3 — Fill in .env:**
+**Step 7 — Verify:**
 
-Paste the email and both tokens into `SKILL_DIR/.env`.
-
-**Step 4 — Verify:**
 ```bash
 bash SKILL_DIR/scripts/jira-api.sh list
 ```
-If it returns tickets, the setup is complete.
+
+If it returns tickets, tell the user setup is complete. If it fails, read the error and help troubleshoot (common issues: wrong email, expired token, incorrect JIRA_URL).
 
 ### .env variables
 
