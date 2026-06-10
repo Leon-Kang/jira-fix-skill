@@ -4,23 +4,24 @@
 
 一个 AI Agent Skill，自动化 Jira → 写代码 → Bitbucket PR 的完整工作流。
 
-对你的 AI 说一句 "fix PROJ-123"，它会自动拉取 ticket 详情、创建分支、实现修复、跑测试、创建 Bitbucket Draft PR，并提议在 Jira 上留言——全程自动。
+对你的 AI 说一句 "fix PROJ-123"，它会自动拉取 ticket 详情、创建分支、实现修复、跑测试、做一次 code review 并修复发现的问题，然后询问你是否创建 Bitbucket Draft PR、是否在 Jira 上留言——全程自动。
 
 ## 功能
 
 ```
-Jira ticket → 读取详情 → 创建分支 → 实现修复 → 测试 → lint → 提交 → Draft PR → Jira 留言
+Jira ticket → 读取详情 → 创建分支 → 实现修复 → 测试 → lint → code review → 提交 → （可选）Draft PR → （可选）Jira 留言
 ```
 
 - **查看 tickets** — 列出分配给你的 Jira tickets
-- **修复 ticket** — 端到端：拉取 → 建分支 → 写代码 → 测试 → lint → PR
+- **修复 ticket** — 端到端：拉取 → 建分支 → 写代码 → 测试 → lint → review → 提交 → 可选 PR → 可选留言
 - **处理反馈** — 读取 review 评论，针对性修改并推送
 - **Dry run** — 只输出修复计划，不动代码
 
 ### 安全设计
 
 - 从不修改 Jira ticket 状态（只添加评论，且需要你确认后才发送）
-- PR 始终以 Draft 形式创建
+- 提交前始终先做一次 code review——项目里有 review skill 就调用它，没有则直接 review diff
+- 创建 PR 是可选的——skill 会先询问，且 PR 始终以 Draft 形式创建
 - 所有 Jira 评论先展示给你看，由你决定是否发布
 
 ## 支持的平台
@@ -127,8 +128,8 @@ TEST_URL_PATTERN=
 | 你说 | 效果 |
 |------|------|
 | "show my tickets" | 列出你的 Jira tickets |
-| "fix PROJ-123" | 完整流程：拉取 → 建分支 → 写代码 → 测试 → lint → PR |
-| "apply feedback on PROJ-123" | 读取评论，针对性修复，推送 |
+| "fix PROJ-123" | 完整流程：拉取 → 建分支 → 写代码 → 测试 → lint → review → 提交 → 可选 PR |
+| "apply feedback on PROJ-123" | 读取评论，针对性修复，review，推送 |
 | "plan for PROJ-123" | 只输出修复计划，不动代码 |
 
 ## `.env` 变量说明

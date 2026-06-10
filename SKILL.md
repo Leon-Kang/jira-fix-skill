@@ -5,9 +5,9 @@ description: "Automate the full Jira ticket fix workflow: list your assigned tic
 
 # Jira Fix Workflow
 
-Automates: Jira ticket → code fix → Bitbucket draft PR → Jira comment → feedback loop.
+Automates: Jira ticket → code fix → code review → (optional) Bitbucket draft PR → (optional) Jira comment → feedback loop.
 
-**Scope**: Only comments on Jira. Never changes ticket status. PO manages lifecycle. PRs are always draft — human reviews before merge.
+**Scope**: Only comments on Jira. Never changes ticket status. PO manages lifecycle. A code review always runs before committing. Creating a PR is optional — the skill asks first, and PRs are always draft so a human reviews before merge.
 
 ## SKILL_DIR resolution
 
@@ -245,7 +245,17 @@ Run format command then lint command (see "Resolving commands" above). Only run 
 
 If lint errors are found, fix them and re-run until clean. Do NOT skip this step if commands are available — PRs that fail CI lint will be rejected.
 
-**Step 6 — Commit and push:**
+**Step 6 — Code review (mandatory, before committing):**
+
+After test, format, and lint pass, a code review is REQUIRED. Do NOT skip it and do NOT commit before it is done.
+
+1. **Look for a review skill in the current project.** Search the project's skill directories — `.cursor/skills/`, `.agents/skills/`, `.claude/skills/`, `.codex/skills/` — and the skills available in the current session for any whose name or description mentions "review" (e.g. `review-pr`, `code-review`, `bugbot`, `security-review`).
+2. **If a review skill exists**: invoke it to review the current changes (the feature branch diff against `MAIN_BRANCH`) and follow whatever workflow that skill defines.
+3. **If no review skill exists**: review the changes yourself. Run `git diff MAIN_BRANCH` and check: does the change fully address the ticket, are there bugs or unhandled edge cases, is the code clean and consistent with the surrounding codebase, is test coverage adequate.
+4. **Fix every valid issue** the review surfaces. After fixing, re-run test (Step 4) and format & lint (Step 5) until they pass again.
+5. Summarize the review findings and the fixes you made for the user.
+
+**Step 7 — Commit and push:**
 Use conventional commit format: `type(scope): TICKET-KEY module - description`
 
 - **type**: `feat` for Story/Feature, `fix` for Bug, `refactor`/`chore`/`docs` as appropriate
@@ -262,9 +272,14 @@ git commit -m "MESSAGE"
 git push -u origin BRANCH
 ```
 
-**Step 7 — Create Bitbucket draft PR:**
+**Step 8 — Ask what to do next (create PR? comment on Jira?):**
 
-PR title follows the same convention as commit messages: `type(scope): TICKET-KEY module - description`
+The fix is reviewed, committed, and pushed. Creating a PR and commenting on Jira are BOTH optional — do neither automatically. Ask the user which they want (they may choose one, both, or neither):
+
+1. **Create a Bitbucket draft PR?**
+2. **Post a comment on Jira?**
+
+**If the user wants a PR** — PR title follows the same convention as commit messages: `type(scope): TICKET-KEY module - description`
 
 ```bash
 bash SKILL_DIR/scripts/bb-pr.sh TICKET-KEY "type(scope): TICKET-KEY module - description" BRANCH "PR description text"
@@ -272,15 +287,20 @@ bash SKILL_DIR/scripts/bb-pr.sh TICKET-KEY "type(scope): TICKET-KEY module - des
 
 The script will prefix `[DRAFT]` to the title. If description is omitted, no description body is sent. Share the PR URL with the user.
 
-**Step 8 — Propose Jira comment (DO NOT post automatically):**
-
-Print the following message in the chat and ask the user whether to post it on Jira:
+**If the user wants a Jira comment** — build it from what actually happened. If a PR was created:
 
 ```
 Draft PR created
 PR: PR_URL
 Branch: BRANCH
 Please review and mark ready when satisfied
+```
+
+If no PR was created:
+
+```
+Fix pushed to branch BRANCH
+Please review
 ```
 
 If `TEST_URL_PATTERN` is set in `.env`, include a test link by replacing `{TICKET_NUMBER}` with the numeric part of the ticket key.
@@ -306,7 +326,10 @@ Read the feedback, check current changes with `git diff MAIN_BRANCH`, make only 
 **Step 4 — Format & Lint:**
 Run format and lint commands if available (see "Resolving commands" above).
 
-**Step 5 — Push and reply:**
+**Step 5 — Code review (mandatory, before committing):**
+Run the same mandatory code review as in "Fix a ticket" Step 6 — find and invoke the project's review skill if one exists, otherwise review the `git diff MAIN_BRANCH` yourself. Fix every valid issue, then re-run format & lint until clean.
+
+**Step 6 — Push and reply:**
 ```bash
 git add -A
 git commit -m "fix(scope): TICKET-KEY module - address review feedback"
@@ -333,7 +356,8 @@ Fetch the ticket (MCP or bash), read the codebase, output a detailed fix plan in
 ## Important rules
 
 1. **Never change Jira ticket status** — only add comments
-2. **PRs are always draft** — user decides when to publish
-3. **Commit messages always include the ticket key** — format: `type(scope): TICKET-KEY module - description`
-4. **Ask before acting on ambiguous tickets** — if the description is vague, ask the user for clarification before coding
-5. **Feedback fixes are surgical** — don't rewrite the whole thing, only address what was flagged
+2. **Always code-review before committing** — use the project's review skill if one exists, otherwise review the diff yourself, and fix what it finds
+3. **Creating a PR is optional** — ask before creating one; PRs are always draft and the user decides when to publish
+4. **Commit messages always include the ticket key** — format: `type(scope): TICKET-KEY module - description`
+5. **Ask before acting on ambiguous tickets** — if the description is vague, ask the user for clarification before coding
+6. **Feedback fixes are surgical** — don't rewrite the whole thing, only address what was flagged

@@ -4,23 +4,24 @@ English | [中文](./README.zh-CN.md)
 
 An AI agent skill that automates the Jira → Code → Bitbucket PR workflow.
 
-Tell your AI agent "fix PROJ-123" and it will fetch the ticket, create a branch, implement the fix, run tests, create a draft PR on Bitbucket, and propose a Jira comment — all in one flow.
+Tell your AI agent "fix PROJ-123" and it will fetch the ticket, create a branch, implement the fix, run tests, run a code review and fix what it finds, then ask whether to open a draft PR and comment on Jira — all in one flow.
 
 ## What it does
 
 ```
-Jira ticket → read details → create branch → implement fix → test → lint → commit → draft PR → Jira comment
+Jira ticket → read details → create branch → implement fix → test → lint → code review → commit → (optional) draft PR → (optional) Jira comment
 ```
 
 - **List tickets** — show your assigned Jira tickets
-- **Fix a ticket** — end-to-end: fetch → branch → code → test → lint → PR → comment
+- **Fix a ticket** — end-to-end: fetch → branch → code → test → lint → review → commit → optional PR → optional comment
 - **Apply feedback** — address review comments and push updates
 - **Dry run** — plan a fix without touching code
 
 ### Safety by design
 
 - Never changes Jira ticket status (only adds comments, and only when you confirm)
-- PRs are always created as drafts
+- Always runs a code review before committing — uses the project's review skill if one exists, otherwise reviews the diff directly
+- Creating a PR is optional — the skill asks first, and PRs are always created as drafts
 - All Jira comments are shown to you first — you decide whether to post
 
 ## Supported platforms
@@ -129,8 +130,8 @@ Just talk to your AI agent naturally:
 | You say | What happens |
 |---------|-------------|
 | "show my tickets" | Lists your assigned Jira tickets |
-| "fix PROJ-123" | Full workflow: fetch → branch → code → test → lint → PR |
-| "apply feedback on PROJ-123" | Reads comments, makes targeted fixes, pushes |
+| "fix PROJ-123" | Full workflow: fetch → branch → code → test → lint → review → commit → optional PR |
+| "apply feedback on PROJ-123" | Reads comments, makes targeted fixes, reviews, pushes |
 | "plan for PROJ-123" | Outputs a fix plan without touching code |
 
 ## `.env` reference
