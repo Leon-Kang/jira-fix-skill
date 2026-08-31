@@ -1,7 +1,7 @@
 {
   "name": "jira-fix-skill",
-  "version": "1.0.0",
-  "description": "AI agent skill: Jira ticket → code fix → Bitbucket draft PR",
+  "version": "2.0.0",
+  "description": "AI agent skill: Jira ticket → recon → approved plan → code fix → GitHub Enterprise draft PR",
   "bin": {
     "jira-fix-skill": "./bin/install.sh"
   },
@@ -13,7 +13,9 @@
   ],
   "keywords": [
     "jira",
-    "bitbucket",
+    "github",
+    "github-enterprise",
+    "pull-request",
     "ai-agent",
     "cursor",
     "claude-code",

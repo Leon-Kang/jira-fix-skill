@@ -64,7 +64,7 @@ install_to() {
   cp "$PKG_DIR/SKILL.md" "$dest/"
   cp "$PKG_DIR/.env.example" "$dest/"
   cp "$PKG_DIR/scripts/jira-api.sh" "$dest/scripts/"
-  cp "$PKG_DIR/scripts/bb-pr.sh" "$dest/scripts/"
+  cp "$PKG_DIR/scripts/gh-pr.sh" "$dest/scripts/"
   chmod +x "$dest/scripts/"*.sh
 
   if [[ ! -f "$dest/.env" ]]; then
@@ -74,6 +74,12 @@ install_to() {
 
   if $is_upgrade; then
     echo "  ↑ Upgraded $dest ($label) — .env preserved"
+    if [[ -f "$dest/scripts/bb-pr.sh" ]]; then
+      echo "    ! scripts/bb-pr.sh is obsolete (Bitbucket support was removed). Delete it when convenient."
+    fi
+    if grep -q '^BB_' "$dest/.env" 2>/dev/null; then
+      echo "    ! .env still has BB_* entries. They are unused now and can be removed."
+    fi
   else
     echo "  ✓ Installed to $dest ($label)"
   fi
@@ -86,7 +92,8 @@ done
 
 echo ""
 echo "  Next steps:"
-echo "    1. Edit .env in the install directory (fill in your tokens)"
-echo "    2. See README for token creation: https://github.com/Leon-Kang/jira-fix-skill"
-echo "    3. Tell your AI agent: \"show my tickets\""
+echo "    1. Edit .env in the install directory (Jira email, API token, JIRA_URL)"
+echo "    2. Authenticate GitHub: gh auth login --hostname YOUR_HOST --git-protocol ssh --web"
+echo "    3. See README for details: https://github.com/Leon-Kang/jira-fix-skill"
+echo "    4. Tell your AI agent: \"show my tickets\""
 echo ""
