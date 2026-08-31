@@ -92,8 +92,10 @@ done
 
 echo ""
 echo "  Next steps:"
-echo "    1. Edit .env in the install directory (Jira email, API token, JIRA_URL)"
+echo "    1. Set JIRA_URL in .env (and MAIN_BRANCH if you merge into something else)"
 echo "    2. Authenticate GitHub: gh auth login --hostname YOUR_HOST --git-protocol ssh --web"
-echo "    3. See README for details: https://github.com/Leon-Kang/jira-fix-skill"
-echo "    4. Tell your AI agent: \"show my tickets\""
+echo "    3. Jira goes through the Atlassian MCP — only fill in ATLASSIAN_EMAIL and"
+echo "       ATLASSIAN_API_TOKEN if you do not have that MCP installed"
+echo "    4. See README: https://github.com/Leon-Kang/jira-fix-skill"
+echo "    5. Tell your AI agent: \"show my tickets\""
 echo ""
