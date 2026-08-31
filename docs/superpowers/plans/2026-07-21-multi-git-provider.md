@@ -1,5 +1,9 @@
 # Multi-Git Provider Implementation Plan
 
+> **SUPERSEDED (v2.0.0) — do not execute.** Bitbucket support was removed instead of being
+> preserved, and the GitHub provider ships as `scripts/gh-pr.sh` rather than the `lib/` +
+> `jira-fix-host` CLI described below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn `jira-fix` into a safe Jira-to-code workflow that supports Bitbucket Cloud, GitHub.com, and arbitrary GitHub Enterprise Server hosts without breaking existing Bitbucket installations.

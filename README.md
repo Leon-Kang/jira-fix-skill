@@ -2,27 +2,36 @@
 
 English | [中文](./README.zh-CN.md)
 
-An AI agent skill that automates the Jira → Code → Bitbucket PR workflow.
+An AI agent skill that automates the Jira → Code → GitHub Enterprise PR workflow, with human approval gates in the right places.
 
-Tell your AI agent "fix PROJ-123" and it will fetch the ticket, create a branch, implement the fix, run tests, run a code review and fix what it finds, then ask whether to open a draft PR and comment on Jira — all in one flow.
+Tell your AI agent "fix PROJ-123" and it gathers the intel first — ticket, comment thread, existing branches and PRs, the actual code, the git history — then either asks you what is missing or hands you a plan to approve. Only after you approve does it touch code. Nothing gets committed, pushed, opened as a PR, or posted to Jira without your say-so.
 
 ## What it does
 
 ```
-Jira ticket → read details → create branch → implement fix → test → lint → code review → commit → (optional) draft PR → (optional) Jira comment
+Jira ticket → recon → intel gate → plan gate → code → test → lint → review → push gate → (optional) draft PR → (optional) Jira comment
 ```
 
 - **List tickets** — show your assigned Jira tickets
-- **Fix a ticket** — end-to-end: fetch → branch → code → test → lint → review → commit → optional PR → optional comment
-- **Apply feedback** — address review comments and push updates
-- **Dry run** — plan a fix without touching code
+- **Fix a ticket** — end-to-end, with three approval gates
+- **Apply feedback** — paste a PR link or just say "check the latest comments"; reads Jira comments *and* PR reviews/inline comments, then goes straight to fixing
+- **Plan only** — recon and plan without touching code
 
-### Safety by design
+### The three gates
 
-- Never changes Jira ticket status (only adds comments, and only when you confirm)
-- Always runs a code review before committing — uses the project's review skill if one exists, otherwise reviews the diff directly
-- Creating a PR is optional — the skill asks first, and PRs are always created as drafts
-- All Jira comments are shown to you first — you decide whether to post
+1. **Intel gate** — if the ticket is under-specified, the agent tells you exactly what is missing and why, then stops. It does not guess.
+2. **Plan gate** — you get a six-section plan (understanding, files, changes, verification, risk, branch/commit) and nothing is written until you approve it.
+3. **Push gate** — you see the diff stat, verification evidence and the exact commit message before anything is committed or pushed.
+
+Feedback rounds deliberately skip all three. The ticket was already investigated, the plan already approved and the branch already published, so reviewer comments go straight to work — with per-item escalation when something is genuinely ambiguous, out of scope, or conflicts with the ticket.
+
+### Other safety properties
+
+- Never changes Jira ticket status — comments only, and only when you confirm
+- Never stashes your work automatically; a dirty worktree stops the workflow
+- Always runs a code review before the push gate, using the project's review skill when one exists
+- PRs are always drafts, and `pr create` is idempotent so it never opens a duplicate
+- Jira comments are capped at 3 lines — outcome and links, nothing else
 
 ## Supported platforms
 
@@ -38,8 +47,9 @@ Works with any AI coding agent that supports agent skills:
 ## Prerequisites
 
 - `jq`, `curl`, `git` in PATH (pre-installed on macOS)
-- A Jira Cloud + Bitbucket Cloud account
-- **Atlassian MCP** (optional — preferred when available, auto-fallback to bash API)
+- [`gh`](https://cli.github.com) authenticated against your GitHub / GitHub Enterprise host
+- A Jira Cloud account
+- **Atlassian MCP** — the preferred path for all Jira access. With it connected, the skill needs no Jira token at all; without it, a Jira API token is used as a fallback.
 
 ## Installation
 
@@ -80,21 +90,22 @@ chmod +x "$TARGET/scripts/"*.sh
 
 ## Setup
 
-The AI agent handles most of the setup interactively on first use. Just say "show my tickets" and it will walk you through the process.
+The AI agent handles setup interactively on first use. Just say "show my tickets" and it walks you through it.
 
-Here's what happens behind the scenes:
+### GitHub authentication
 
-### Interactive setup (handled by the AI)
+GitHub credentials live in the `gh` credential store — the skill never asks for, prints, or stores a GitHub token.
 
-1. **Asks for a Jira ticket URL** — paste any ticket link from your browser. The agent auto-extracts your Jira domain and project prefix.
-2. **Auto-detects Bitbucket workspace** — reads `git remote` to find your workspace slug.
-3. **Auto-detects default branch** — checks `origin/HEAD` for `main` or `develop`.
-4. **Checks for Atlassian MCP** — if installed, uses it for faster Jira access. If not, offers guidance to install it (optional).
-5. **Guides token creation** — walks you through creating two API tokens at https://id.atlassian.com/manage-profile/security
-6. **Writes `.env`** — saves everything to a gitignored `.env` file.
-7. **Verifies** — runs a test query to confirm everything works.
+```bash
+gh auth login --hostname your-host.ghe.com --git-protocol ssh --web
+gh auth status --hostname your-host.ghe.com
+```
 
-### Manual setup (if you prefer)
+The host, owner and repository are detected from the git remote of whatever repo you are working in, so nothing repo-specific goes into `.env`.
+
+### Jira access
+
+If the Atlassian MCP is connected, there is nothing to authenticate — all Jira reads and writes, comments included, go through MCP.
 
 ```bash
 cd <your-install-directory>    # e.g. ~/.cursor/skills/jira-fix
@@ -102,26 +113,19 @@ cp .env.example .env
 chmod 600 .env
 ```
 
-Create two API tokens at https://id.atlassian.com/manage-profile/security → **"Create API token with scopes"**:
+```bash
+JIRA_URL=https://your-site.atlassian.net
+MAIN_BRANCH=develop
+```
 
-| Token | App | Scopes |
-|-------|-----|--------|
-| `ATLASSIAN_API_TOKEN` | Jira | (default) |
-| `BB_API_TOKEN` | Bitbucket | Repositories R/W, Pull Requests R/W |
-
-Fill in `.env`:
+**Only if you do not have the MCP**, add a fallback token created at https://id.atlassian.com/manage-profile/security → **"Create API token with scopes"** → App: **Jira**:
 
 ```bash
 ATLASSIAN_EMAIL=you@example.com
 ATLASSIAN_API_TOKEN=your-jira-token
-BB_API_TOKEN=your-bitbucket-token
-JIRA_URL=https://your-site.atlassian.net
-BB_WORKSPACE=your-workspace-slug
-MAIN_BRANCH=develop
-TEST_URL_PATTERN=
 ```
 
-Verify: `bash scripts/jira-api.sh list`
+Verify the fallback with `bash scripts/jira-api.sh list`.
 
 ## Usage
 
@@ -130,33 +134,58 @@ Just talk to your AI agent naturally:
 | You say | What happens |
 |---------|-------------|
 | "show my tickets" | Lists your assigned Jira tickets |
-| "fix PROJ-123" | Full workflow: fetch → branch → code → test → lint → review → commit → optional PR |
-| "apply feedback on PROJ-123" | Reads comments, makes targeted fixes, reviews, pushes |
-| "plan for PROJ-123" | Outputs a fix plan without touching code |
+| "fix PROJ-123" | Recon → intel gate → plan → your approval → code → test → review → push gate |
+| "check the latest comments" | Reads new feedback on the current branch's PR and fixes it |
+| *(paste a PR link)* | Same, for that PR — works from any directory |
+| "plan for PROJ-123" | Recon and plan only, never touches code |
 
 ## `.env` reference
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ATLASSIAN_EMAIL` | Yes | Your Atlassian account email |
-| `ATLASSIAN_API_TOKEN` | Yes | Jira API token (scoped to Jira) |
-| `BB_API_TOKEN` | Yes | Bitbucket API token (scoped to Bitbucket) |
 | `JIRA_URL` | Yes | Your Jira Cloud URL, e.g. `https://acme.atlassian.net` |
-| `BB_WORKSPACE` | Yes | Bitbucket workspace slug |
+| `ATLASSIAN_EMAIL` | No | Only for the no-MCP fallback |
+| `ATLASSIAN_API_TOKEN` | No | Only for the no-MCP fallback (scoped to Jira) |
 | `MAIN_BRANCH` | No | Target branch for PRs (default: `develop`) |
+| `GIT_REMOTE` | No | Git remote to read the repository from (default: `origin`) |
+| `GH_HOST` | No | Expected GitHub host; guards against acting on the wrong repo |
 | `TEST_URL_PATTERN` | No | Test URL with `{TICKET_NUMBER}` placeholder |
 | `TEST_CMD` | No | Custom test command (default: auto-detect) |
 | `LINT_CMD` | No | Custom lint command (default: skip if not set) |
 | `FMT_CMD` | No | Custom format command (default: skip if not set) |
 | `JIRA_LIST_JQL` | No | Custom JQL to override default ticket query |
 
+No GitHub token belongs in this file, and no Jira token either when the MCP is connected.
+
 ## How it works
 
-### MCP-first, bash-fallback
+### MCP-first for Jira
 
-The skill prefers the **Atlassian MCP** (Cursor's built-in integration) for Jira operations. If MCP is not available, it falls back to `scripts/jira-api.sh` which calls the Jira REST API directly.
+Jira operations go through the **Atlassian MCP** whenever it is available — listing, reading tickets, reading the comment thread, and posting comments. `scripts/jira-api.sh` exists for setups without the MCP and talks to the Jira REST API directly.
 
-Bitbucket PR creation always uses `scripts/bb-pr.sh` (no MCP available for this).
+One detail worth knowing: `getJiraIssue` omits `comment`, `attachment` and `issuelinks` from its default field set, so the skill always passes `fields` explicitly. A ticket is not commentless just because a default call came back without comments.
+
+### GitHub through `gh`
+
+`scripts/gh-pr.sh` wraps the GitHub CLI. It parses the git remote (including SSH remotes with custom usernames like `me@your-host.ghe.com:org/repo.git`, redacting any credentials embedded in HTTPS URLs), verifies `gh` auth for that host, and dispatches PR operations.
+
+Both scripts are non-interactive, take text input, print text, and support `--format json`:
+
+```bash
+bash scripts/gh-pr.sh repo detect --format json
+bash scripts/gh-pr.sh pr find                     # current branch
+bash scripts/gh-pr.sh pr create --title "fix(web): PROJ-123 nav - fix overlap" \
+                                --source feature/PROJ-123-header-overlap --body-file -
+bash scripts/gh-pr.sh pr feedback --pr https://HOST/org/repo/pull/42
+bash scripts/gh-pr.sh pr feedback --since "$(git log -1 --format=%cI)" --format json
+
+bash scripts/jira-api.sh list --format json
+bash scripts/jira-api.sh get PROJ-123
+bash scripts/jira-api.sh comments PROJ-123 --format json
+printf 'Fixed: ...\nPR: https://...\n' | bash scripts/jira-api.sh comment PROJ-123 --text-file -
+```
+
+Run either script with `--help` for full usage.
 
 ### File structure
 
@@ -164,13 +193,13 @@ Bitbucket PR creation always uses `scripts/bb-pr.sh` (no MCP available for this)
 jira-fix-skill/
 ├── SKILL.md          # Skill definition (the AI reads this)
 ├── .env.example      # Template for configuration
-├── .env              # Your secrets (gitignored)
+├── .env              # Your local config (gitignored)
 ├── package.json      # npm package (enables npx install)
 ├── bin/
 │   └── install.sh    # Interactive installer
 ├── scripts/
-│   ├── jira-api.sh   # Jira API: list, get, comment
-│   └── bb-pr.sh      # Bitbucket: create draft PR
+│   ├── jira-api.sh   # Jira: list, get, comments, comment
+│   └── gh-pr.sh      # GitHub / GHES: repo detect, pr find/create/feedback
 ├── README.md
 ├── LICENSE
 └── .gitignore
@@ -180,15 +209,11 @@ jira-fix-skill/
 
 ### Custom JQL
 
-Set `JIRA_LIST_JQL` in your `.env` to override the default ticket query:
-
 ```bash
 JIRA_LIST_JQL="project = MYPROJ AND assignee = currentUser() AND sprint in openSprints() ORDER BY priority ASC"
 ```
 
 ### Custom test / lint / format commands
-
-Set these in `.env` to match your project's tooling:
 
 ```bash
 TEST_CMD=yarn run test
@@ -200,7 +225,7 @@ If not set, the skill auto-detects test commands from `package.json` and skips l
 
 ### Test URL
 
-If your CI deploys preview environments, set `TEST_URL_PATTERN`:
+If your CI deploys preview environments:
 
 ```bash
 TEST_URL_PATTERN=https://preview-{TICKET_NUMBER}.your-app.dev/
@@ -212,12 +237,15 @@ The `{TICKET_NUMBER}` placeholder is replaced with the numeric part of the ticke
 
 Run `npx jira-fix-skill` again — it detects existing installs and upgrades while preserving your `.env`.
 
-Or with git:
+### Upgrading from 1.x (Bitbucket)
 
-```bash
-cd <your-install-directory>
-git pull
-```
+Version 2.0 replaces Bitbucket Cloud with GitHub / GitHub Enterprise:
+
+- `scripts/bb-pr.sh` is gone; use `scripts/gh-pr.sh`
+- `BB_API_TOKEN` and `BB_WORKSPACE` are no longer used — delete them from `.env`
+- Authenticate with `gh auth login --hostname HOST --git-protocol ssh --web` instead
+
+The installer flags both leftovers during an upgrade.
 
 ## License
 

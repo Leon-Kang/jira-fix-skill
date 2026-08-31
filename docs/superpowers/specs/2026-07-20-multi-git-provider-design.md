@@ -1,5 +1,10 @@
 # Multi-Git Provider Design
 
+> **SUPERSEDED (v2.0.0).** The skill dropped Bitbucket entirely and targets GitHub / GitHub
+> Enterprise only, implemented as bash wrappers around `gh` rather than the Node library and
+> unified CLI described here. See `SKILL.md` and `scripts/gh-pr.sh` for the shipped design.
+> Kept for the provider-contract and error-handling rationale, which still applies.
+
 ## Purpose
 
 Keep `jira-fix` useful as a workflow and safety policy layer while supporting:

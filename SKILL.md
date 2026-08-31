@@ -1,13 +1,23 @@
 ---
 name: jira-fix
-description: "Automate the full Jira ticket fix workflow: list your assigned tickets, pick one, auto-fix code, create Bitbucket draft PR, and comment on Jira. Also handles reviewer feedback loops. Use this skill whenever the user mentions Jira tickets, fixing a ticket, listing their tasks, creating a PR from a ticket, responding to Jira feedback, or anything involving the Jira-to-code-to-PR pipeline. Trigger phrases include: 'fix PROJ-123', 'show my tickets', 'my Jira tasks', 'what should I work on', 'continue fixing', 'apply feedback', 'create PR for ticket', 'list my bugs'. Even casual phrases like 'what tickets do I have' or 'work on the next bug' should trigger this skill."
+description: "Automate the full Jira ticket fix workflow: list your assigned tickets, pick one, gather intel, get a plan approved, fix the code, create a GitHub Enterprise draft PR, and comment on Jira. Also handles reviewer feedback loops. Use this skill whenever the user mentions Jira tickets, fixing a ticket, listing their tasks, creating a PR from a ticket, responding to Jira feedback, or anything involving the Jira-to-code-to-PR pipeline. Trigger phrases include: 'fix PROJ-123', 'show my tickets', 'my Jira tasks', 'what should I work on', 'continue fixing', 'apply feedback', 'create PR for ticket', 'list my bugs'. Even casual phrases like 'what tickets do I have' or 'work on the next bug' should trigger this skill."
 ---
 
 # Jira Fix Workflow
 
-Automates: Jira ticket → code fix → code review → (optional) Bitbucket draft PR → (optional) Jira comment → feedback loop.
+Automates: Jira ticket → intel gathering → approved plan → code fix → code review → (optional) GitHub draft PR → (optional) Jira comment → feedback loop.
 
-**Scope**: Only comments on Jira. Never changes ticket status. PO manages lifecycle. A code review always runs before committing. Creating a PR is optional — the skill asks first, and PRs are always draft so a human reviews before merge.
+**Scope**: Only comments on Jira. Never changes ticket status; the PO manages lifecycle. Git hosting is GitHub / GitHub Enterprise via the `gh` CLI.
+
+**The three gates** apply when starting new work on a ticket. Never work around them, never batch them together:
+
+1. **Intel gate** — if the ticket is under-specified, ask the user and stop. Do not guess.
+2. **Plan gate** — present a plan and wait for explicit approval before touching any file.
+3. **Push gate** — present the diff summary and wait for explicit approval before commit and push.
+
+Creating a PR and commenting on Jira are separate opt-ins after the push gate.
+
+**Feedback rounds skip all three** — see workflow 3. The ticket was already investigated, the plan was already approved and the branch is already published, so reviewer feedback goes straight to work with per-item escalation instead.
 
 ## SKILL_DIR resolution
 
@@ -16,7 +26,9 @@ Automates: Jira ticket → code fix → code review → (optional) Bitbucket dra
 ## Prerequisites
 
 - `jq`, `curl`, `git` available in PATH (pre-installed on macOS)
-- **Atlassian MCP** (optional — preferred when available, auto-fallback to bash API otherwise)
+- **`gh`** (GitHub CLI) authenticated against your GitHub Enterprise host — this is how the skill creates PRs and reads PR feedback
+- **Atlassian MCP** — the preferred path for every Jira operation, including comments. When it is connected, no Jira token is needed anywhere.
+- **A Jira API token** — only needed as a fallback when the Atlassian MCP is not available
 
 ### First-time setup
 
@@ -33,144 +45,137 @@ Extract from the URL:
 - **JIRA_URL**: the origin part → `https://acme.atlassian.net`
 - **Project prefix**: the ticket key prefix → `PROJ` (store this for later use in branch naming and JQL)
 
-**Step 2 — Auto-detect Bitbucket workspace:**
+**Step 2 — Detect the Git host and repository:**
 
 ```bash
-git remote get-url origin
+bash SKILL_DIR/scripts/gh-pr.sh repo detect
 ```
 
-If the remote contains `bitbucket.org`, extract the workspace:
-- `git@bitbucket.org:myworkspace/myrepo.git` → `BB_WORKSPACE=myworkspace`
-- `https://bitbucket.org/myworkspace/myrepo.git` → `BB_WORKSPACE=myworkspace`
+This prints the provider, host, `owner/name`, and default branch, all derived from the git remote. Nothing needs to be written to `.env` for this — detection runs fresh in whatever repo the user is working in.
 
-If not a Bitbucket remote, ask the user for `BB_WORKSPACE`.
+If it fails with `UNSUPPORTED_REMOTE`, the current directory is not a GitHub/GHES repository. Tell the user; do not continue.
 
-**Step 3 — Detect default branch:**
+**Step 3 — Verify GitHub authentication:**
 
 ```bash
-git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'
+gh auth status --hostname <HOST-from-step-2>
 ```
 
-Use the result as `MAIN_BRANCH`. Fall back to `develop` if detection fails.
+If not authenticated, tell the user to run:
 
-**Step 4 — Check for Atlassian MCP:**
-
-Check if `plugin-atlassian-atlassian` MCP server is available by attempting a lightweight call:
-
-```
-CallMcpTool(server:"plugin-atlassian-atlassian", toolName:"getAccessibleAtlassianResources", arguments:{})
+```bash
+gh auth login --hostname <HOST> --git-protocol ssh --web
 ```
 
-- **If MCP responds**: Tell the user "Atlassian MCP is connected. Jira operations will use MCP (faster, no extra token needed for read)."
-- **If MCP is not available**: Tell the user:
-  > Atlassian MCP is not installed. The skill will use direct API calls instead (works fine, just needs an API token).
-  >
-  > To install the MCP for a better experience:
-  > 1. Open Cursor Settings → MCP
-  > 2. Search for "Atlassian" and enable it
-  > 3. Follow the OAuth login prompt
-  >
-  > Would you like to continue without MCP, or set it up first?
+Never ask for or store a GitHub token — `gh` owns those credentials.
 
-  Proceed with setup regardless of the answer — the skill works with or without MCP.
+**Step 4 — Confirm the default branch:**
 
-**Step 5 — Create .env:**
+Use the `DefaultBranch` from Step 2 as `MAIN_BRANCH`. Confirm it with the user, since some teams merge into `develop` while `origin/HEAD` points at `main`.
+
+**Step 5 — Check for Atlassian MCP:**
+
+Call `getAccessibleAtlassianResources` on the `plugin-atlassian-atlassian` MCP server. The response also gives you the `cloudId` for the site — record it.
+
+- **If MCP responds**: tell the user Jira will go through MCP, and **skip token creation entirely**. Go to Step 6.
+- **If MCP is not available**: tell the user it can be enabled in Cursor Settings → MCP, and that without it the skill needs a Jira API token. Do Step 6 and Step 7.
+
+**Step 6 — Create .env:**
 
 ```bash
 cp SKILL_DIR/.env.example SKILL_DIR/.env
 chmod 600 SKILL_DIR/.env
 ```
 
-Then write the auto-detected values into `SKILL_DIR/.env`:
+Write `JIRA_URL` (step 1) and `MAIN_BRANCH` (step 4). With MCP connected, that is all `.env` needs — leave `ATLASSIAN_EMAIL` and `ATLASSIAN_API_TOKEN` empty.
 
-```bash
-ATLASSIAN_EMAIL=        # ask the user
-ATLASSIAN_API_TOKEN=    # ask the user (see token creation below)
-BB_API_TOKEN=           # ask the user (see token creation below)
-JIRA_URL=               # auto-detected from step 1
-BB_WORKSPACE=           # auto-detected from step 2
-MAIN_BRANCH=            # auto-detected from step 3
-TEST_URL_PATTERN=       # ask the user (optional)
-```
+**Step 7 — Jira token (only when MCP is unavailable):**
 
-**Step 6 — Guide token creation:**
+Ask the user for their Atlassian email, then:
 
-Ask the user for their Atlassian email, then guide them to create tokens:
-
-> Go to https://id.atlassian.com/manage-profile/security
->
-> Click **"Create and manage API tokens"** → **"Create API token with scopes"**:
->
-> **Token 1 — Jira** (`ATLASSIAN_API_TOKEN`):
+> Go to https://id.atlassian.com/manage-profile/security → **"Create and manage API tokens"** → **"Create API token with scopes"**
 > - Name: `jira-fix-jira`
-> - App: Jira
->
-> **Token 2 — Bitbucket** (`BB_API_TOKEN`):
-> - Name: `jira-fix-bitbucket`
-> - App: **Bitbucket**
-> - Scopes: **Repositories Read + Write**, **Pull Requests Read + Write**
->
-> Both tokens are created on the same page. They look similar but have different scopes.
+> - App: **Jira**
 
-Collect the email and both tokens from the user, then write them into `SKILL_DIR/.env`.
-
-**Step 7 — Verify:**
+Write `ATLASSIAN_EMAIL` and `ATLASSIAN_API_TOKEN` into `SKILL_DIR/.env`, then verify:
 
 ```bash
 bash SKILL_DIR/scripts/jira-api.sh list
 ```
 
-If it returns tickets, tell the user setup is complete. If it fails, read the error and help troubleshoot (common issues: wrong email, expired token, incorrect JIRA_URL).
+If it fails, read the error and help troubleshoot (common issues: wrong email, expired token, incorrect JIRA_URL).
 
 ### .env variables
 
-All environment-specific values are read from `SKILL_DIR/.env`:
-
+- **ATLASSIAN_EMAIL**, **ATLASSIAN_API_TOKEN**: only needed when the Atlassian MCP is unavailable; leave empty otherwise
 - **JIRA_URL**: Your Atlassian site (e.g. `https://your-site.atlassian.net`)
-- **BB_WORKSPACE**: Your Bitbucket workspace slug
 - **MAIN_BRANCH**: Target branch for PRs (default: `develop`)
+- **GIT_REMOTE**: Optional, defaults to `origin`
+- **GH_HOST**: Optional guard — if set, the scripts refuse to act on a repo whose remote points elsewhere
 - **TEST_URL_PATTERN**: Optional test URL pattern with `{TICKET_NUMBER}` placeholder
-- **TEST_CMD**: Custom test command (default: auto-detect from `package.json`)
-- **LINT_CMD**: Custom lint command (skipped if not set)
-- **FMT_CMD**: Custom format command (skipped if not set)
+- **TEST_CMD**, **LINT_CMD**, **FMT_CMD**: Optional command overrides
 - **JIRA_LIST_JQL**: Custom JQL for ticket listing (optional)
-- **Bitbucket repo**: auto-detected from `git remote`
+
+GitHub credentials are **not** stored here — they live in the `gh` credential store. With the Atlassian MCP connected, this file holds no secrets at all.
 
 ## Jira access: MCP-first, bash-fallback
 
-For every Jira operation, prefer MCP if available; fall back to bash script if not.
+**Use MCP whenever it is available.** It covers every Jira operation this skill needs, including comments, and requires no token. Only drop to the bash scripts when the MCP server is not connected.
 
 ### MCP (preferred)
 
-Use when `plugin-atlassian-atlassian` MCP server is connected:
+Get the `cloudId` from `getAccessibleAtlassianResources` — it is the site UUID, not the hostname.
 
-Read `JIRA_URL` from `SKILL_DIR/.env` to get the cloudId (the hostname part, e.g. `your-site.atlassian.net`):
+- **List tickets**: `searchJiraIssuesUsingJql` with `{cloudId, jql, maxResults:20, fields:["summary","status","issuetype","priority","updated"], responseContentFormat:"markdown"}`
+- **Get ticket with its comment thread** — one call, and `fields` must be passed explicitly, because the default field set silently omits `comment`, `attachment` and `issuelinks`:
 
-- **List tickets**: `CallMcpTool(server:"plugin-atlassian-atlassian", toolName:"searchJiraIssuesUsingJql", arguments:{cloudId:"<JIRA_HOST>", jql:"...", maxResults:20, fields:["summary","status","issuetype","priority","updated"], responseContentFormat:"markdown"})`
-- **Get ticket**: `CallMcpTool(server:"plugin-atlassian-atlassian", toolName:"getJiraIssue", arguments:{cloudId:"<JIRA_HOST>", issueIdOrKey:"TICKET-KEY", responseContentFormat:"markdown"})`
-- **Add comment**: `CallMcpTool(server:"plugin-atlassian-atlassian", toolName:"addCommentToJiraIssue", arguments:{cloudId:"<JIRA_HOST>", issueIdOrKey:"TICKET-KEY", commentBody:"TEXT", contentFormat:"markdown"})`
+  ```
+  getJiraIssue {
+    cloudId,
+    issueIdOrKey: "TICKET-KEY",
+    fields: ["summary","description","status","issuetype","priority","labels",
+             "components","assignee","issuelinks","attachment","comment"],
+    responseContentFormat: "markdown"
+  }
+  ```
 
-### Bash fallback
+  Comments come back in `fields.comment.comments`, each with `author.displayName`, `created` and `body`.
 
-Use when MCP is not available:
+- **Add comment**: `addCommentToJiraIssue` with `{cloudId, issueIdOrKey, commentBody, contentFormat:"markdown"}`
+
+If you call `getJiraIssue` without `fields`, you get no comments — that is a missing parameter, not a missing capability. Do not conclude the comment thread is empty and do not fall back to a token because of it.
+
+### Bash fallback (only when MCP is not connected)
 
 - **List tickets**: `bash SKILL_DIR/scripts/jira-api.sh list`
 - **Get ticket**: `bash SKILL_DIR/scripts/jira-api.sh get TICKET-KEY`
+- **Get comments**: `bash SKILL_DIR/scripts/jira-api.sh comments TICKET-KEY`
 - **Add comment**: `bash SKILL_DIR/scripts/jira-api.sh comment TICKET-KEY "TEXT"`
 
-### Bitbucket (bash only — no MCP available)
+All four accept `--format json` for structured output. They read `ATLASSIAN_EMAIL` / `ATLASSIAN_API_TOKEN` from `.env` and fail with `CONFIG_MISSING` when those are empty — which is expected and harmless on an MCP-only setup.
 
-- **Create draft PR**: `bash SKILL_DIR/scripts/bb-pr.sh TICKET-KEY "TITLE" BRANCH "DESCRIPTION"`
+## GitHub Enterprise access
 
-## Workflows
+All PR operations go through one script, which detects host/owner/repo from the git remote and authenticates via `gh`:
 
-### Resolving commands for test, lint, format
+- **Detect repo**: `bash SKILL_DIR/scripts/gh-pr.sh repo detect`
+- **Find existing PR**: `bash SKILL_DIR/scripts/gh-pr.sh pr find [--source BRANCH | --pr NUMBER|URL]`
+- **Create draft PR**: `bash SKILL_DIR/scripts/gh-pr.sh pr create --title "TITLE" --source BRANCH --body-file -`
+- **Read PR feedback**: `bash SKILL_DIR/scripts/gh-pr.sh pr feedback [--source BRANCH | --pr NUMBER|URL] [--since ISO8601]`
+
+`--source` defaults to the current branch. `--pr` accepts a number, or a full pull request URL — and a URL also selects the host and repository, so a link the user pasted works even from a different checkout. `--since` filters to feedback created after a timestamp.
+
+`pr create` is idempotent — it returns the existing open PR instead of opening a duplicate. PRs are created with GitHub's native draft state. Run `bash SKILL_DIR/scripts/gh-pr.sh --help` for full usage.
+
+## Resolving commands for test, lint, format
 
 Before running test/lint/format, check `SKILL_DIR/.env` for custom overrides:
 
-- **TEST_CMD**: if set, use it. Otherwise auto-detect: look for `package.json` scripts — prefer `yarn run test` if `test` script exists, else `npm test`.
+- **TEST_CMD**: if set, use it. Otherwise auto-detect: look for `package.json` scripts — prefer `yarn run test` if a `test` script exists, else `npm test`.
 - **LINT_CMD**: if set, use it. Otherwise skip lint (not all projects have one).
 - **FMT_CMD**: if set, use it. Otherwise skip format (not all projects have one).
+
+## Workflows
 
 ### 1. List my tickets
 
@@ -184,87 +189,113 @@ Present the tickets clearly. Let the user pick one, or suggest the highest-prior
 
 ### 2. Fix a ticket
 
-When user says "fix PROJ-123" or picks a ticket from the list:
+When user says "fix PROJ-123" or picks a ticket from the list.
 
 Read `MAIN_BRANCH` from `SKILL_DIR/.env` (default: `develop`). Use this value wherever `MAIN_BRANCH` appears below.
 
-**Step 1 — Fetch ticket details:**
+---
 
-**Jira: get ticket** (MCP or bash)
+#### Phase 0 — Recon (read-only, no branch, no edits)
 
-Read the output — it contains summary, type, priority, and description. Share this with the user for confirmation before proceeding.
+Work through the whole checklist before forming any opinion. This phase is read-only: no `git checkout`, no file writes.
 
-**Step 2 — Pull latest & create branch (BEFORE any code work):**
+1. **Ticket body and comment thread** — one `getJiraIssue` call with the explicit `fields` list above (or `jira-api.sh get` + `comments` without MCP). Read the comments properly: requirements, repro details, the branch someone already started, and prior decisions are very often there rather than in the description.
+2. **Linked issues and attachments** — note linked keys and attached screenshots; ask the user to describe an attachment if it looks load-bearing and you cannot read it.
+3. **Prior work on this ticket** — check for an existing branch and PR so you do not redo finished work:
+   ```bash
+   git branch -a --list "*TICKET-KEY*"
+   bash SKILL_DIR/scripts/gh-pr.sh pr find --source feature/TICKET-KEY-...
+   ```
+4. **Code** — locate the modules and files the ticket actually touches, and read them. Naming the files is not enough; you must have read them before planning.
+5. **History** — `git log --oneline -20 -- <relevant paths>` to see what changed here recently and whether this area has regressed before.
+6. **Verification path** — determine how the fix will be proven: which test, which command, which URL or manual step.
 
-This step MUST complete before reading, exploring, or modifying any code:
+Report a short recon summary to the user before moving on.
+
+#### Phase 1 — Intel gate
+
+The ticket is ready to plan only if **all** of these hold:
+
+- The problem or goal is unambiguous.
+- Bugs have repro steps or a trigger condition; stories have acceptance criteria.
+- The impact is traceable to specific code (you know which app/module/files change).
+- The expected result is stated, not inferred.
+- There is a concrete way to verify the fix.
+
+If **any** of them fails, **stop**. Ask the user with a structured question that states, for each gap, **what is missing and why you need it**. Do not create a branch, do not edit code, do not guess a "reasonable" interpretation.
+
+Offer to post the open questions as a Jira comment, but only post if the user confirms.
+
+#### Phase 2 — Plan gate
+
+When intel is sufficient, present a plan with exactly these six sections:
+
+1. **Understanding / root cause** — 2-3 lines.
+2. **Files involved** — concrete paths.
+3. **Change plan** — the actual edits, as bullets.
+4. **Verification** — test command, manual steps, test URL if `TEST_URL_PATTERN` is set.
+5. **Risk and blast radius** — what else could break.
+6. **Branch and commit** — proposed branch name and commit message.
+
+Then **stop and wait for explicit approval**. Do not checkout, do not write files, do not run formatters. Approval means the user actually says to proceed; silence, a question, or a related comment is not approval.
+
+Skip this gate only if the user has explicitly said to skip it for this ticket.
+
+#### Phase 3 — Branch (only after approval)
+
+Check the worktree first. **Never stash automatically.**
+
 ```bash
-STASHED=false
-if ! git diff --quiet HEAD 2>/dev/null || [ -n "$(git ls-files --others --exclude-standard)" ]; then
-  git stash --include-untracked && STASHED=true
-fi
+git status --short
+```
 
+If anything is uncommitted or untracked, stop and ask the user how to handle it (commit, stash themselves, or discard). Continue only once the worktree is clean or the user explicitly tells you to proceed.
+
+```bash
 git checkout MAIN_BRANCH
-git pull origin MAIN_BRANCH
+git pull --ff-only
 
-# Check if branch already exists
-BRANCH="<prefix>/TICKET-KEY-short-description"
+BRANCH="feature/TICKET-KEY-short-description"
 if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
   git checkout "${BRANCH}"
   git merge MAIN_BRANCH
 else
   git checkout -b "${BRANCH}"
 fi
-
-$STASHED && echo "NOTE: You have stashed changes. Run 'git stash pop' if you need them."
 ```
 
-Branch prefix by ticket type:
-- **Bug** → `fix/TICKET-KEY-short-desc` (e.g. `fix/PROJ-123-header-overlap`)
-- **Story / Feature** → `feature/TICKET-KEY-short-desc` (e.g. `feature/PROJ-456-user-avatar`)
-- **Other** (Task, Chore, etc.) → `fix/TICKET-KEY-short-desc`
+Branch prefix is always `feature/`, regardless of ticket type (Bug, Story, Task, Chore). Never use a `fix/` prefix for branch names. Generate a short kebab-case suffix from the ticket summary (3-5 words max).
 
-Generate a short kebab-case suffix from the ticket summary (3-5 words max).
+Examples: `feature/PROJ-123-header-overlap`, `feature/PROJ-456-user-avatar`
 
-**Step 3 — Implement the fix:**
+#### Phase 4 — Implement
 
-Only start after the feature branch is checked out:
-- Read the codebase to understand relevant code
-- Plan the fix based on ticket description
-- Implement with clean, tested code
-- Run existing tests
-- Add or update tests for changes
-- Keep changes minimal and focused on the ticket
+Implement the approved plan. Keep changes minimal and focused on the ticket. Add or update tests for the change. If implementation reveals the plan was wrong, stop and re-run Phase 2 with the corrected plan rather than silently expanding scope.
 
-**Step 4 — Test (auto-retry up to 3 times):**
+#### Phase 5 — Test, format, lint
 
-Run the test command (see "Resolving commands" above). If tests fail, read the output and fix. Retry up to 3 times. If still failing after 3 attempts, tell the user and ask whether to comment on Jira.
+Run the test command (see "Resolving commands"). If tests fail, read the output and fix. Retry up to 3 times; if still failing, stop and report to the user.
 
-**Step 5 — Format & Lint (must pass before commit):**
+Then run format and lint, if configured. Fix lint errors and re-run until clean. Do not skip this when the commands are available — PRs failing CI lint get rejected.
 
-Run format command then lint command (see "Resolving commands" above). Only run these if the commands are available (configured in `.env` or auto-detected).
+#### Phase 6 — Code review (mandatory, before the push gate)
 
-If lint errors are found, fix them and re-run until clean. Do NOT skip this step if commands are available — PRs that fail CI lint will be rejected.
+1. **Look for a review skill in the current project.** Search `.cursor/skills/`, `.agents/skills/`, `.claude/skills/`, `.codex/skills/` and the skills available in the session for one whose name or description mentions "review".
+2. **If a review skill exists**: invoke it on the feature branch diff against `MAIN_BRANCH` and follow its workflow. Do not pick a skill that reviews a *published PR URL* — at this point nothing is pushed.
+3. **If no review skill exists**: review it yourself. Run `git diff MAIN_BRANCH` and check: does the change fully address the ticket, are there bugs or unhandled edge cases, is the code consistent with the surrounding codebase, is test coverage adequate.
+4. **Fix every valid issue**, then re-run Phase 5 until clean.
+5. Summarize the findings and the fixes for the user.
 
-**Step 6 — Code review (mandatory, before committing):**
+#### Phase 7 — Push gate
 
-After test, format, and lint pass, a code review is REQUIRED. Do NOT skip it and do NOT commit before it is done.
+Present, in the chat:
 
-1. **Look for a review skill in the current project.** Search the project's skill directories — `.cursor/skills/`, `.agents/skills/`, `.claude/skills/`, `.codex/skills/` — and the skills available in the current session for any whose name or description mentions "review" (e.g. `review-pr`, `code-review`, `bugbot`, `security-review`).
-2. **If a review skill exists**: invoke it to review the current changes (the feature branch diff against `MAIN_BRANCH`) and follow whatever workflow that skill defines.
-3. **If no review skill exists**: review the changes yourself. Run `git diff MAIN_BRANCH` and check: does the change fully address the ticket, are there bugs or unhandled edge cases, is the code clean and consistent with the surrounding codebase, is test coverage adequate.
-4. **Fix every valid issue** the review surfaces. After fixing, re-run test (Step 4) and format & lint (Step 5) until they pass again.
-5. Summarize the review findings and the fixes you made for the user.
+- what changed, in 2-3 lines
+- `git diff MAIN_BRANCH --stat`
+- verification evidence (test/lint results)
+- the exact commit message
 
-**Step 7 — Commit and push:**
-Use conventional commit format: `type(scope): TICKET-KEY module - description`
-
-- **type**: `feat` for Story/Feature, `fix` for Bug, `refactor`/`chore`/`docs` as appropriate
-- **scope**: the top-level package or area of the project (e.g. `client`, `server`, `api`, `web`)
-- **module**: the feature/module within the scope — e.g. `nav`, `chat`, `profile`, `payment`
-
-Examples:
-- `fix(client): PROJ-123 nav - fix header overlap on mobile`
-- `feat(server): PROJ-456 auth - add OAuth2 support`
+Then **ask for approval to commit and push**. Only after the user approves:
 
 ```bash
 git add -A
@@ -272,92 +303,177 @@ git commit -m "MESSAGE"
 git push -u origin BRANCH
 ```
 
-**Step 8 — Ask what to do next (create PR? comment on Jira?):**
+Commit message format: `type(scope): TICKET-KEY module - description`
 
-The fix is reviewed, committed, and pushed. Creating a PR and commenting on Jira are BOTH optional — do neither automatically. Ask the user which they want (they may choose one, both, or neither):
+- **type**: `feat` for Story/Feature, `fix` for Bug, `refactor`/`chore`/`docs` as appropriate
+- **scope**: the top-level package or area (e.g. `client`, `server`, `api`, `web`)
+- **module**: the feature/module within the scope (e.g. `nav`, `chat`, `profile`, `payment`)
 
-1. **Create a Bitbucket draft PR?**
-2. **Post a comment on Jira?**
+Examples:
+- `fix(client): PROJ-123 nav - fix header overlap on mobile`
+- `feat(server): PROJ-456 auth - add OAuth2 support`
 
-**If the user wants a PR** — PR title follows the same convention as commit messages: `type(scope): TICKET-KEY module - description`
+#### Phase 8 — Optional PR and Jira comment
+
+Both are opt-in and independent. Ask which the user wants; they may choose one, both, or neither.
+
+**If the user wants a PR** — the PR title uses the same convention as the commit message:
 
 ```bash
-bash SKILL_DIR/scripts/bb-pr.sh TICKET-KEY "type(scope): TICKET-KEY module - description" BRANCH "PR description text"
+bash SKILL_DIR/scripts/gh-pr.sh pr create \
+  --title "type(scope): TICKET-KEY module - description" \
+  --source BRANCH --body-file -
 ```
 
-The script will prefix `[DRAFT]` to the title. If description is omitted, no description body is sent. Share the PR URL with the user.
+Pass the PR body on stdin, built from the "PR body template" below. Share the returned PR URL with the user.
 
-**If the user wants a Jira comment** — build it from what actually happened. If a PR was created:
-
-```
-Draft PR created
-PR: PR_URL
-Branch: BRANCH
-Please review and mark ready when satisfied
-```
-
-If no PR was created:
-
-```
-Fix pushed to branch BRANCH
-Please review
-```
-
-If `TEST_URL_PATTERN` is set in `.env`, include a test link by replacing `{TICKET_NUMBER}` with the numeric part of the ticket key.
-
-Only call **Jira: add comment** (MCP or bash) if the user explicitly confirms.
+**If the user wants a Jira comment** — build it per "Jira comment style" below and post only after the user confirms the exact text.
 
 ### 3. Apply feedback (continue fixing)
 
-When user says "continue fixing PROJ-123", "apply feedback", "address the review comments":
+Triggered by a PR link on its own, "check the latest comments", "continue fixing PROJ-123", "apply feedback", "address the review comments".
 
-Read `MAIN_BRANCH` from `SKILL_DIR/.env` (default: `develop`).
+**This workflow does not re-run the intel gate or the plan gate.** The ticket was already investigated and the plan already approved; a reviewer asking for a null check does not need a fresh six-section plan. Read the feedback, then start working. Escalate per-item, only when Step 3 says to.
 
-**Step 1 — Get latest feedback:**
+**Step 1 — Locate the feedback.** Pick whichever applies:
 
-**Jira: get ticket** (MCP or bash)
+```bash
+# A PR link was pasted — works from any directory
+bash SKILL_DIR/scripts/gh-pr.sh pr feedback --pr <PR-URL>
 
-**Step 2 — Checkout existing branch:**
-Find and checkout the branch matching the ticket key.
+# A ticket key was named — find its branch, then read both sources
+bash SKILL_DIR/scripts/gh-pr.sh pr feedback --source feature/TICKET-KEY-...
 
-**Step 3 — Make targeted fixes:**
-Read the feedback, check current changes with `git diff MAIN_BRANCH`, make only the fixes that were requested. Do NOT rewrite from scratch.
+# "check the latest comments" with no target — use the current branch
+bash SKILL_DIR/scripts/gh-pr.sh pr feedback
+```
 
-**Step 4 — Format & Lint:**
-Run format and lint commands if available (see "Resolving commands" above).
+"Latest" means anything newer than the last commit on the branch, so you do not re-address what you already fixed:
 
-**Step 5 — Code review (mandatory, before committing):**
-Run the same mandatory code review as in "Fix a ticket" Step 6 — find and invoke the project's review skill if one exists, otherwise review the `git diff MAIN_BRANCH` yourself. Fix every valid issue, then re-run format & lint until clean.
+```bash
+bash SKILL_DIR/scripts/gh-pr.sh pr feedback --since "$(git log -1 --format=%cI)"
+```
 
-**Step 6 — Push and reply:**
+Also read the Jira comment thread (MCP `getJiraIssue` with `fields:["comment"]`) and apply the same cutoff — reviewers use whichever channel is convenient. If the user only asked you to *check*, report what you found and stop there.
+
+**Step 2 — Triage, then start immediately.** Post one line per item, `[source] what was asked → what you will do`, and begin working in the same turn. Do not wait for approval on this list; it exists so the user can interrupt if you misread something, not to block you.
+
+**Step 3 — Escalate individual items, not the batch.** Do the clear items right away. Stop and ask about an item only when it:
+
+- is ambiguous, self-contradictory, or two reviewers disagree
+- needs a design or architecture change beyond the current diff
+- requires touching files outside the scope of this change
+- conflicts with the ticket's acceptance criteria
+- changes a public API, a data schema, or needs a migration
+- describes something you cannot reproduce or verify
+
+Everything else is just work — naming, null checks, extracted helpers, missing tests, copy fixes. Never hold the whole batch hostage to one unclear comment: ship the rest and ask about that one.
+
+**Step 4 — Make targeted fixes.** Check the current state with `git diff MAIN_BRANCH` and change only what was flagged. Do not rewrite from scratch and do not slip in unrelated improvements. If the code review in Step 6 finds a real problem outside the feedback, report it rather than silently expanding the diff.
+
+**Step 5 — Test, format, lint** (same as Phase 5).
+
+**Step 6 — Code review** (same as Phase 6).
+
+**Step 7 — Commit and push directly.** No push gate here: the branch is already published and under review, so an extra round-trip buys nothing.
+
 ```bash
 git add -A
 git commit -m "fix(scope): TICKET-KEY module - address review feedback"
-git push --force-with-lease origin BRANCH
+git push origin BRANCH
 ```
 
-Print the following message in the chat and ask the user whether to post it on Jira:
+Normal push only. `--force-with-lease` still requires explicit approval, because rewriting history can drop a reviewer's context.
 
-```
-Feedback addressed and pushed.
-Changes: SUMMARY
-```
+Then report what you changed and the resulting diff stat.
 
-If `TEST_URL_PATTERN` is set in `.env`, include a test link.
+**Step 8 — Optional Jira comment**, per the style rules below, only if the user confirms.
 
-Only call **Jira: add comment** (MCP or bash) if the user explicitly confirms.
-
-### 4. Dry run (plan only)
+### 4. Plan only (dry run)
 
 When user says "plan for PROJ-123" or "what would you change for this ticket":
 
-Fetch the ticket (MCP or bash), read the codebase, output a detailed fix plan in markdown. Do NOT create a branch, modify code, or create a PR. This is just planning.
+Run Phase 0 and Phase 1, then output the Phase 2 plan. Stop there. Do not create a branch, modify code, or create a PR.
+
+## PR body template
+
+A reviewer opens a PR wanting three answers: what was asked for, where do I look, and what did you actually do. Give exactly those, in this order, and nothing else.
+
+```markdown
+## Ticket
+TICKET-KEY — one line stating what the ticket asks for.
+https://your-site.atlassian.net/browse/TICKET-KEY
+
+## Scope
+- path/to/module — what part of it this touches
+
+## Changes
+- what you actually changed
+```
+
+Rules for each section:
+
+- **Ticket** — the key, one line of your own words describing the ask, and the link. Not a copy-paste of the description.
+- **Scope** — the directories or modules the diff touches, one line each, so the reviewer knows where to look. Usually 1-3 lines. Skip individual filenames; the diff already lists them.
+- **Changes** — one bullet per real change, phrased as what it does, matching what is actually in the diff. Usually 2-5 bullets.
+
+The whole body should fit in roughly 12 lines. Do not add: test logs, "Type of change" checkboxes, a checklist, a restatement of the ticket description, screenshots you did not actually take, or "Please review / Let me know if you have questions". If verification is non-obvious, it gets one bullet in Changes — not its own section.
+
+Worked example:
+
+```markdown
+## Ticket
+DFT-15225 — message actions are unreachable on sent voice recordings and invite chats.
+https://koko-app.atlassian.net/browse/DFT-15225
+
+## Scope
+- packages/client/src/app/chat — message bubble layout and action menu
+
+## Changes
+- Hide the react action on outgoing voice messages
+- Drop avatars from invite chats so the action row fits
+- Cap bubble max-width so actions stay visible on narrow screens
+```
+
+## Jira comment style
+
+Jira comments are status pings for humans who already have the ticket open, not reports. Hard limits:
+
+- **Maximum 3 lines and 200 characters.**
+- Only the outcome plus links.
+- No diffs, no file lists, no test output, no restating the ticket.
+- No filler such as "Please review and mark ready when satisfied" or "Let me know if you have any questions".
+
+After a fix:
+
+```
+Fixed: header overlap on mobile nav.
+PR: https://ideawise.ghe.com/dating-framework/df-web/pull/123
+```
+
+After applying feedback:
+
+```
+Addressed review feedback: null check + regression test.
+PR: https://ideawise.ghe.com/dating-framework/df-web/pull/123
+```
+
+If no PR was created, replace the PR line with `Branch: BRANCH`. If `TEST_URL_PATTERN` is set in `.env`, a test link may be the third line — replace `{TICKET_NUMBER}` with the numeric part of the ticket key.
+
+Always show the exact comment text in chat and post it only after the user confirms.
 
 ## Important rules
 
-1. **Never change Jira ticket status** — only add comments
-2. **Always code-review before committing** — use the project's review skill if one exists, otherwise review the diff yourself, and fix what it finds
-3. **Creating a PR is optional** — ask before creating one; PRs are always draft and the user decides when to publish
-4. **Commit messages always include the ticket key** — format: `type(scope): TICKET-KEY module - description`
-5. **Ask before acting on ambiguous tickets** — if the description is vague, ask the user for clarification before coding
-6. **Feedback fixes are surgical** — don't rewrite the whole thing, only address what was flagged
+1. **Never change Jira ticket status** — only add comments.
+2. **Use MCP for Jira whenever it is connected** — never ask the user for a Jira token that MCP makes unnecessary.
+3. **Recon before opinion** — read the ticket, its comments, and the actual code before saying anything about how to fix it.
+4. **Under-specified means stop** — ask what is missing and why; never guess your way past the intel gate.
+5. **No edits before plan approval** — on new ticket work, the plan gate covers file writes, branch creation and formatters.
+6. **No commit or push before approval** — on new ticket work, show the diff stat and commit message first.
+7. **Never stash automatically** — a dirty worktree stops the workflow and gets escalated to the user.
+8. **Always code-review before the push gate** — use the project's review skill if one exists, otherwise review the diff yourself, and fix what it finds.
+9. **PRs are optional and always drafts** — ask first; `pr create` never opens a duplicate.
+10. **Commit messages always include the ticket key** — format: `type(scope): TICKET-KEY module - description`.
+11. **Jira comments stay under 3 lines** — outcome and links only.
+12. **PR bodies are Ticket / Scope / Changes** — nothing else, roughly 12 lines.
+13. **Feedback fixes are surgical and ungated** — go straight to work; only address what was flagged; escalate single unclear items without blocking the rest.
