@@ -145,6 +145,14 @@ Get the `cloudId` from `getAccessibleAtlassianResources` — it is the site UUID
 
 If you call `getJiraIssue` without `fields`, you get no comments — that is a missing parameter, not a missing capability. Do not conclude the comment thread is empty and do not fall back to a token because of it.
 
+**Choosing the response format.** Use `markdown` normally. Switch to `responseContentFormat:"adf"` as soon as the issue has attachments, because markdown renders every embedded image as `![](blob:...)`, and a `blob:` URL is unreachable — the screenshot silently disappears. ADF keeps each image as a `media` node whose `attrs.alt` is the attachment filename:
+
+```json
+{"type":"media","attrs":{"type":"file","id":"0d29...","alt":"Screenshot 2026-07-17 at 12.36.17.png"}}
+```
+
+That filename is what ties the image to the entry in `fields.attachment`, and its position in the document is what tells you which requirement or comment the screenshot belongs to.
+
 ### Bash fallback (only when MCP is not connected)
 
 - **List tickets**: `bash SKILL_DIR/scripts/jira-api.sh list`
@@ -199,8 +207,14 @@ Read `MAIN_BRANCH` from `SKILL_DIR/.env` (default: `develop`). Use this value wh
 
 Work through the whole checklist before forming any opinion. This phase is read-only: no `git checkout`, no file writes.
 
-1. **Ticket body and comment thread** — one `getJiraIssue` call with the explicit `fields` list above (or `jira-api.sh get` + `comments` without MCP). Read the comments properly: requirements, repro details, the branch someone already started, and prior decisions are very often there rather than in the description.
-2. **Linked issues and attachments** — note linked keys and attached screenshots; ask the user to describe an attachment if it looks load-bearing and you cannot read it.
+1. **Ticket body and comment thread** — one `getJiraIssue` call with the explicit `fields` list above (or `jira-api.sh get` + `comments` without MCP). Read the comments properly: requirements, repro details, the branch someone already started, and prior decisions are very often there rather than in the description. If `fields.attachment` is non-empty, re-read in `adf` format so the images stay tied to the text.
+
+2. **Linked issues and screenshots** — note linked issue keys. For images, you can see *that* a screenshot exists, its filename, and which requirement or comment it sits under — but **you cannot see the image itself**. There is no MCP tool for attachment content, and the REST content URL returns 403 without a Jira token.
+
+   So do not guess what a screenshot shows, and never write "as shown in the screenshot" as if you had read it. Instead, list the filenames with where each one appears, then:
+
+   - If an image is load-bearing (it *is* the bug report, or the only spec for a layout), ask the user to paste it into the chat. Say which filename you need and what you are trying to learn from it. A missing load-bearing screenshot is an intel gap — treat it as one.
+   - If the surrounding text already states the requirement, note the image as supporting evidence you could not read, and continue.
 3. **Prior work on this ticket** — check for an existing branch and PR so you do not redo finished work:
    ```bash
    git branch -a --list "*TICKET-KEY*"
@@ -221,6 +235,7 @@ The ticket is ready to plan only if **all** of these hold:
 - The impact is traceable to specific code (you know which app/module/files change).
 - The expected result is stated, not inferred.
 - There is a concrete way to verify the fix.
+- Nothing essential lives only inside a screenshot you cannot read.
 
 If **any** of them fails, **stop**. Ask the user with a structured question that states, for each gap, **what is missing and why you need it**. Do not create a branch, do not edit code, do not guess a "reasonable" interpretation.
 
@@ -468,12 +483,13 @@ Always show the exact comment text in chat and post it only after the user confi
 2. **Use MCP for Jira whenever it is connected** — never ask the user for a Jira token that MCP makes unnecessary.
 3. **Recon before opinion** — read the ticket, its comments, and the actual code before saying anything about how to fix it.
 4. **Under-specified means stop** — ask what is missing and why; never guess your way past the intel gate.
-5. **No edits before plan approval** — on new ticket work, the plan gate covers file writes, branch creation and formatters.
-6. **No commit or push before approval** — on new ticket work, show the diff stat and commit message first.
-7. **Never stash automatically** — a dirty worktree stops the workflow and gets escalated to the user.
-8. **Always code-review before the push gate** — use the project's review skill if one exists, otherwise review the diff yourself, and fix what it finds.
-9. **PRs are optional and always drafts** — ask first; `pr create` never opens a duplicate.
-10. **Commit messages always include the ticket key** — format: `type(scope): TICKET-KEY module - description`.
-11. **Jira comments stay under 3 lines** — outcome and links only.
-12. **PR bodies are Ticket / Scope / Changes** — nothing else, roughly 12 lines.
-13. **Feedback fixes are surgical and ungated** — go straight to work; only address what was flagged; escalate single unclear items without blocking the rest.
+5. **Never describe a screenshot you could not read** — you get the filename and its position, not the pixels. Ask the user to paste it.
+6. **No edits before plan approval** — on new ticket work, the plan gate covers file writes, branch creation and formatters.
+7. **No commit or push before approval** — on new ticket work, show the diff stat and commit message first.
+8. **Never stash automatically** — a dirty worktree stops the workflow and gets escalated to the user.
+9. **Always code-review before the push gate** — use the project's review skill if one exists, otherwise review the diff yourself, and fix what it finds.
+10. **PRs are optional and always drafts** — ask first; `pr create` never opens a duplicate.
+11. **Commit messages always include the ticket key** — format: `type(scope): TICKET-KEY module - description`.
+12. **Jira comments stay under 3 lines** — outcome and links only.
+13. **PR bodies are Ticket / Scope / Changes** — nothing else, roughly 12 lines.
+14. **Feedback fixes are surgical and ungated** — go straight to work; only address what was flagged; escalate single unclear items without blocking the rest.

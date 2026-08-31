@@ -135,7 +135,21 @@ _curl() {
 }
 
 # Renders an Atlassian Document Format node as plain text, one line per top-level block.
-ADF_TO_TEXT='def adf_text: if . == null then "" else [ (.content // [])[] | [ .. | .text? // empty ] | join("") ] | join("\n") end;'
+# Media nodes become "[image: filename]" so a screenshot is never silently dropped —
+# the filename is what ties it back to the attachment list.
+ADF_TO_TEXT='
+def inline_text: [ .. | .text? // empty ] | join("");
+def adf_text:
+  if . == null then "" else
+    [ .. | select(type == "object") |
+        if .type? == "media"
+        then "[image: " + (.attrs.alt // .attrs.id // "unnamed") + "]"
+        elif (.type? == "paragraph" or .type? == "heading" or .type? == "codeBlock")
+        then inline_text
+        else empty end ]
+    | map(select(. != "")) | join("\n")
+  end;
+'
 
 emit() {
   local payload="$1" text_filter="$2"

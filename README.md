@@ -163,7 +163,11 @@ No GitHub token belongs in this file, and no Jira token either when the MCP is c
 
 Jira operations go through the **Atlassian MCP** whenever it is available — listing, reading tickets, reading the comment thread, and posting comments. `scripts/jira-api.sh` exists for setups without the MCP and talks to the Jira REST API directly.
 
-One detail worth knowing: `getJiraIssue` omits `comment`, `attachment` and `issuelinks` from its default field set, so the skill always passes `fields` explicitly. A ticket is not commentless just because a default call came back without comments.
+Two details worth knowing:
+
+`getJiraIssue` omits `comment`, `attachment` and `issuelinks` from its default field set, so the skill always passes `fields` explicitly. A ticket is not commentless just because a default call came back without comments.
+
+Screenshots can be located but not read. In markdown responses every embedded image becomes an unreachable `![](blob:...)`, so the skill re-reads tickets with attachments in ADF, where each image is a `media` node carrying the attachment filename. That is enough to tell you which requirement a screenshot belongs to — but the pixels need a Jira token, since no MCP tool serves attachment content and the REST content URL returns 403 unauthenticated. When an image is load-bearing the skill asks you to paste it rather than guessing what it shows.
 
 ### GitHub through `gh`
 
