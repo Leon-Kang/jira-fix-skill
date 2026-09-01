@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "description": "AI agent skill: Jira ticket → recon → approved plan → code fix → GitHub Enterprise draft PR",
   "bin": {
-    "jira-fix-skill": "./bin/install.sh"
+    "jira-fix-skill": "bin/install.sh"
   },
   "files": [
     "bin/",
@@ -27,7 +27,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Leon-Kang/jira-fix-skill.git"
+    "url": "git+https://github.com/Leon-Kang/jira-fix-skill.git"
   },
   "os": [
     "darwin",
