@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PKG_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# npx exposes this script as node_modules/.bin/jira-fix-skill, a symlink into the
+# package. Follow the link first, or PKG_DIR lands in node_modules/ and every
+# copy below fails.
+SELF="${BASH_SOURCE[0]}"
+while [[ -L "$SELF" ]]; do
+  LINK_DIR="$(cd -P "$(dirname "$SELF")" && pwd)"
+  SELF="$(readlink "$SELF")"
+  [[ "$SELF" != /* ]] && SELF="${LINK_DIR}/${SELF}"
+done
+PKG_DIR="$(cd -P "$(dirname "$SELF")/.." && pwd)"
 SKILL_NAME="jira-fix"
 
 echo ""
