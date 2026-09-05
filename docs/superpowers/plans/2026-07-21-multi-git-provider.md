@@ -15,7 +15,7 @@
 ## Global Constraints
 
 - Support Bitbucket Cloud, github.com, and arbitrary GitHub Enterprise Server hosts.
-- Do not hardcode `ideawise.ghe.com` or a business repository.
+- Do not hardcode an enterprise hostname or a business repository.
 - GitHub authentication uses the `gh` credential store; do not persist GitHub tokens in `.env`.
 - Existing Bitbucket `.env` values and `scripts/bb-pr.sh` continue to work.
 - Every CLI accepts non-interactive text input, emits text, and supports `--format json`.
@@ -57,12 +57,12 @@ test('detects Bitbucket Cloud from SCP-style SSH', () => {
 });
 
 test('detects GHES with a custom SSH username', () => {
-    assert.deepEqual(parseRemoteUrl('ideawise@ideawise.ghe.com:dating-framework/df-web.git'), {
+    assert.deepEqual(parseRemoteUrl('deploy@ghe.example.com:acme/web.git'), {
         provider: 'github',
-        host: 'ideawise.ghe.com',
-        owner: 'dating-framework',
-        name: 'df-web',
-        remoteUrl: 'ideawise@ideawise.ghe.com:dating-framework/df-web.git',
+        host: 'ghe.example.com',
+        owner: 'acme',
+        name: 'web',
+        remoteUrl: 'deploy@ghe.example.com:acme/web.git',
     });
 });
 

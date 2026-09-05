@@ -438,8 +438,8 @@ Worked example:
 
 ```markdown
 ## Ticket
-DFT-15225 — message actions are unreachable on sent voice recordings and invite chats.
-https://koko-app.atlassian.net/browse/DFT-15225
+PROJ-482 — message actions are unreachable on sent voice recordings and invite chats.
+https://your-site.atlassian.net/browse/PROJ-482
 
 ## Scope
 - packages/client/src/app/chat — message bubble layout and action menu
@@ -463,14 +463,14 @@ After a fix:
 
 ```
 Fixed: header overlap on mobile nav.
-PR: https://ideawise.ghe.com/dating-framework/df-web/pull/123
+PR: https://your-host.ghe.com/org/repo/pull/123
 ```
 
 After applying feedback:
 
 ```
 Addressed review feedback: null check + regression test.
-PR: https://ideawise.ghe.com/dating-framework/df-web/pull/123
+PR: https://your-host.ghe.com/org/repo/pull/123
 ```
 
 If no PR was created, replace the PR line with `Branch: BRANCH`. If `TEST_URL_PATTERN` is set in `.env`, a test link may be the third line — replace `{TICKET_NUMBER}` with the numeric part of the ticket key.

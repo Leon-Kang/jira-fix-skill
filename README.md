@@ -221,8 +221,8 @@ JIRA_LIST_JQL="project = MYPROJ AND assignee = currentUser() AND sprint in openS
 
 ```bash
 TEST_CMD=yarn run test
-FMT_CMD=yarn run dprint fmt --allow-no-files
-LINT_CMD=scripts/changes-lint.sh --merge-base origin/develop
+FMT_CMD=yarn run prettier --write .
+LINT_CMD=scripts/lint-changed.sh --merge-base origin/main
 ```
 
 If not set, the skill auto-detects test commands from `package.json` and skips lint/format if no command is configured.
