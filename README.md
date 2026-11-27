@@ -180,15 +180,17 @@ Both scripts are non-interactive, take text input, print text, and support `--fo
 
 ```bash
 bash scripts/gh-pr.sh repo detect --format json
-bash scripts/gh-pr.sh pr find                     # current branch
+bash scripts/gh-pr.sh branches --key PROJ-123     # branches + active worktrees
+bash scripts/gh-pr.sh pr find                     # current branch (fork-aware)
 bash scripts/gh-pr.sh pr create --title "fix(web): PROJ-123 nav - fix overlap" \
                                 --source feature/PROJ-123-header-overlap --body-file -
 bash scripts/gh-pr.sh pr feedback --pr https://HOST/org/repo/pull/42
 bash scripts/gh-pr.sh pr feedback --since "$(git log -1 --format=%cI)" --format json
+bash scripts/gh-pr.sh pr checks                   # CI check status
 
 bash scripts/jira-api.sh list --format json
-bash scripts/jira-api.sh get PROJ-123
-bash scripts/jira-api.sh comments PROJ-123 --format json
+bash scripts/jira-api.sh get PROJ-123             # or full /browse/PROJ-123 URL
+bash scripts/jira-api.sh comments PROJ-123 --since "$(git log -1 --format=%cI)"
 printf 'Fixed: ...\nPR: https://...\n' | bash scripts/jira-api.sh comment PROJ-123 --text-file -
 ```
 
@@ -225,9 +227,9 @@ JIRA_LIST_JQL="project = MYPROJ AND assignee = currentUser() AND sprint in openS
 ### Custom test / lint / format commands
 
 ```bash
-TEST_CMD=yarn run test
-FMT_CMD=yarn run prettier --write .
-LINT_CMD=scripts/lint-changed.sh --merge-base origin/main
+TEST_CMD="yarn run test"
+FMT_CMD="yarn run dprint fmt --allow-no-files"
+LINT_CMD="scripts/changes-lint.sh --merge-base origin/develop"
 ```
 
 If not set, the skill auto-detects test commands from `package.json` and skips lint/format if no command is configured.
