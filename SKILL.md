@@ -290,7 +290,7 @@ else
 fi
 ```
 
-Start from `origin/MAIN_BRANCH`, never the local `MAIN_BRANCH`: a local copy that is behind would put stale code under the branch, and one that has diverged makes `git pull --ff-only` stop the workflow. For the same reason, every diff below compares against `origin/MAIN_BRANCH...HEAD`, the changes since the branch point.
+Start from `origin/MAIN_BRANCH`, never the local `MAIN_BRANCH`: a local copy that is behind would put stale code under the branch, and one that has diverged makes `git pull --ff-only` stop the workflow. For the same reason, every diff below is taken from the branch point on `origin/MAIN_BRANCH`. Review happens before the commit, so the diff stages the work first; a plain `origin/MAIN_BRANCH...HEAD` would show only what is already committed, and for new work that is nothing.
 
 Branch prefix is always `feature/`, regardless of ticket type (Bug, Story, Task, Chore). Never use a `fix/` prefix for branch names. Generate a short kebab-case suffix from the ticket summary (3-5 words max).
 
@@ -309,8 +309,8 @@ Then run format and lint, if configured. Fix lint errors and re-run until clean.
 #### Phase 6 — Code review (mandatory, before the push gate)
 
 1. **Look for a review skill in the current project.** Search `.cursor/skills/`, `.agents/skills/`, `.claude/skills/`, `.codex/skills/` and the skills available in the session for one whose name or description mentions "review".
-2. **If a review skill exists**: invoke it on the feature branch diff against `origin/MAIN_BRANCH` and follow its workflow. Do not pick a skill that reviews a *published PR URL* — at this point nothing is pushed.
-3. **If no review skill exists**: review it yourself. Run `git diff origin/MAIN_BRANCH...HEAD` and check: does the change fully address the ticket, are there bugs or unhandled edge cases, is the code consistent with the surrounding codebase, is test coverage adequate.
+2. **If a review skill exists**: invoke it on the feature branch diff against `origin/MAIN_BRANCH`, uncommitted changes included, and follow its workflow. Do not pick a skill that reviews a *published PR URL* — at this point nothing is pushed.
+3. **If no review skill exists**: review it yourself. Run `git add -A && git diff --cached "$(git merge-base origin/MAIN_BRANCH HEAD)"` and check: does the change fully address the ticket, are there bugs or unhandled edge cases, is the code consistent with the surrounding codebase, is test coverage adequate.
 4. **Fix every valid issue**, then re-run Phase 5 until clean.
 5. Summarize the findings and the fixes for the user.
 
@@ -319,7 +319,7 @@ Then run format and lint, if configured. Fix lint errors and re-run until clean.
 Present, in the chat:
 
 - what changed, in 2-3 lines
-- `git diff --stat origin/MAIN_BRANCH...HEAD`
+- `git add -A && git diff --cached --stat "$(git merge-base origin/MAIN_BRANCH HEAD)"`
 - verification evidence (test/lint results)
 - the exact commit message
 
@@ -397,7 +397,7 @@ Also read the Jira comment thread (MCP `listJiraIssueComments`) and apply the sa
 
 Everything else is just work — naming, null checks, extracted helpers, missing tests, copy fixes. Never hold the whole batch hostage to one unclear comment: ship the rest and ask about that one.
 
-**Step 4 — Make targeted fixes.** Check the current state with `git diff origin/MAIN_BRANCH...HEAD` and change only what was flagged. Do not rewrite from scratch and do not slip in unrelated improvements. If the code review in Step 6 finds a real problem outside the feedback, report it rather than silently expanding the diff.
+**Step 4 — Make targeted fixes.** Check the current state with `git add -A && git diff --cached "$(git merge-base origin/MAIN_BRANCH HEAD)"` and change only what was flagged. Do not rewrite from scratch and do not slip in unrelated improvements. If the code review in Step 6 finds a real problem outside the feedback, report it rather than silently expanding the diff.
 
 **Step 5 — Test, format, lint** (same as Phase 5).
 
