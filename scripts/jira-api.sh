@@ -109,27 +109,34 @@ shift
 
 POSITIONAL=()
 while [[ $# -gt 0 ]]; do
-  arg="$1"
-  val=""
-  has_eq="false"
-  if [[ "$arg" == --*=* ]]; then
-    has_eq="true"
-    val="${arg#*=}"
-    arg="${arg%%=*}"
+  if [[ "$1" == --*=* ]]; then
+    name="${1%%=*}"
+    value="${1#*=}"
+    step=1
+  else
+    name="$1"
+    value="${2-}"
+    step=2
   fi
 
-  case "$arg" in
-    --format)
-      if [[ "$has_eq" == "true" ]]; then FORMAT="$val"; shift; else FORMAT="${2:?--format needs text or json}"; shift 2; fi
+  case "$name" in
+    --format | --text-file | --since)
+      if [[ "$step" == 2 && ( $# -lt 2 || "$value" == --* ) ]]; then
+        die INVALID_INPUT "${name} requires a value. Run 'jira-api.sh --help' for usage."
+      fi
+      case "$name" in
+        --format) FORMAT="$value" ;;
+        --text-file) TEXT_FILE="$value" ;;
+        --since) SINCE="$value" ;;
+      esac
+      shift "$step"
       ;;
     --text)
-      if [[ "$has_eq" == "true" ]]; then TEXT="$val"; shift; else TEXT="${2:?--text needs a value}"; shift 2; fi
-      ;;
-    --text-file)
-      if [[ "$has_eq" == "true" ]]; then TEXT_FILE="$val"; shift; else TEXT_FILE="${2:?--text-file needs a path or -}"; shift 2; fi
-      ;;
-    --since)
-      if [[ "$has_eq" == "true" ]]; then SINCE="$val"; shift; else SINCE="${2:?--since needs an ISO8601 timestamp}"; shift 2; fi
+      if [[ "$step" == 2 && $# -lt 2 ]]; then
+        die INVALID_INPUT "--text requires a value. Run 'jira-api.sh --help' for usage."
+      fi
+      TEXT="$value"
+      shift "$step"
       ;;
     --dry-run)
       DRY_RUN="true"
@@ -138,6 +145,11 @@ while [[ $# -gt 0 ]]; do
     -h | --help)
       usage
       exit 0
+      ;;
+    --)
+      shift
+      POSITIONAL+=("$@")
+      break
       ;;
     -*)
       die INVALID_INPUT "unknown option '$1'. Run 'jira-api.sh --help' for usage."

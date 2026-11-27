@@ -120,7 +120,7 @@ fi
 
 A merge conflict means stop and ask.
 
-**Phase 4 — Implement** the approved plan and nothing else. Add or update tests for the change, unless `LOCAL.md` or the repository's rules say otherwise. If the plan turns out wrong, go back to Phase 2.
+**Phase 4 — Implement** the approved plan and nothing else. Add or update tests for the change in the repository's existing test setup, unless `LOCAL.md` or the repository's rules say otherwise; if the repository has no test command and no existing tests, do not commit an orphan test file — note it in the plan and ask whether to wire up a test script. If the plan turns out wrong, go back to Phase 2.
 
 **Phase 5 — Verify** with the resolved commands. Fix what your change broke, up to 3 attempts; leave pre-existing warnings in other files alone.
 

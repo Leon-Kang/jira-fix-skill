@@ -799,20 +799,28 @@ while [[ $# -gt 0 ]]; do
   fi
 
   case "$name" in
-    --format | --key | --title | --source | --target | --body | --body-file | --pr | --since)
+    --format | --key | --source | --target | --body-file | --pr | --since)
       if [[ "$step" == 2 && ( $# -lt 2 || "$value" == --* ) ]]; then
         die INVALID_INPUT "${name} requires a value. Run 'gh-pr.sh --help' for usage."
       fi
       case "$name" in
         --format) FORMAT="$value" ;;
         --key) ISSUE_KEY="$value" ;;
-        --title) TITLE="$value" ;;
         --source) SOURCE="$value" ;;
         --target) TARGET="$value" ;;
-        --body) BODY="$value" ;;
         --body-file) BODY_FILE="$value" ;;
         --pr) PR_REF="$value" ;;
         --since) SINCE="$value" ;;
+      esac
+      shift "$step"
+      ;;
+    --title | --body)
+      if [[ "$step" == 2 && $# -lt 2 ]]; then
+        die INVALID_INPUT "${name} requires a value. Run 'gh-pr.sh --help' for usage."
+      fi
+      case "$name" in
+        --title) TITLE="$value" ;;
+        --body) BODY="$value" ;;
       esac
       shift "$step"
       ;;

@@ -301,6 +301,8 @@ else
 fi
 expect_contains "jira list" "$(jira list)" "PROJ-7  [Story]  High  Open"
 expect_contains "jira rejects a non-key" "$(jira get not-a-key)" "INVALID_INPUT"
+expect_contains "jira rejects a missing option value" "$(jira get PROJ-7 --format)" "INVALID_INPUT: --format requires a value"
+expect_contains "jira rejects --since followed by another flag" "$(jira comments PROJ-7 --since --format json)" "--since requires a value"
 
 echo
 printf '%d passed, %d failed\n' "$PASS" "$FAIL"
