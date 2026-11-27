@@ -161,13 +161,13 @@ GitHub token 不属于这个文件；连接了 MCP 时，Jira token 也不需要
 
 ### Jira：MCP 优先
 
-只要 Atlassian MCP 可用，所有 Jira 操作都走 MCP——列表、读 ticket、读评论线程、发评论。`scripts/jira-api.sh` 只服务于没有装 MCP 的环境，直接调用 Jira REST API。
+只要 Atlassian MCP 可用，所有 Jira 操作都走 MCP——列表、读 ticket、读评论线程、下载截图、发评论。`scripts/jira-api.sh` 只服务于没有装 MCP 的环境，直接调用 Jira REST API。
 
 有两个坑值得知道：
 
-`getJiraIssue` 的默认字段集不含 `comment`、`attachment` 和 `issuelinks`，所以 skill 总是显式传 `fields`。默认调用没返回评论，不代表这个 ticket 没有评论。
+`getJiraIssue` 的默认字段集不含 `attachment` 和 `issuelinks`，所以 skill 总是显式传 `fields`。评论用 `listJiraIssueComments` 读，因为 `getJiraIssue` 即使指定了也可能不返回评论。`getJiraIssue` 没返回评论，不代表这个 ticket 没有评论。
 
-截图能定位但读不到。markdown 格式会把内嵌图片渲染成无法访问的 `![](blob:...)`，所以带附件的 ticket 会改用 ADF 重读一次——那里每张图是 `media` 节点，`attrs.alt` 就是附件文件名，足以判断这张截图属于哪条需求。但要看到图像本身需要 Jira token：MCP 没有任何附件内容相关的工具，REST 的 content URL 未认证返回 403。遇到关键截图时 skill 会请你贴进对话，而不是猜图里是什么。
+截图会下载下来看。markdown 格式会把内嵌图片渲染成无法访问的 `![](blob:...)`，所以带附件的 ticket 改用 HTML 读——那里每张图是一个 media 节点，带着附件文件名，能对上它属于哪条需求。然后 skill 通过 MCP 的 `downloadJiraIssueAttachment` 把图片下载下来看。只有下载失败时，才会请你把关键截图贴进对话，而不是猜图里是什么。
 
 ### GitHub：通过 `gh`
 

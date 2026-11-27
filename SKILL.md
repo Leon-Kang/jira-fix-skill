@@ -120,38 +120,36 @@ GitHub credentials are **not** stored here — they live in the `gh` credential 
 
 ## Jira access: MCP-first, bash-fallback
 
-**Use MCP whenever it is available.** It covers every Jira operation this skill needs, including comments, and requires no token. Only drop to the bash scripts when the MCP server is not connected.
+**Use MCP whenever it is available.** It covers every Jira operation this skill needs, including comments and attachment downloads, and requires no token. Only drop to the bash scripts when the MCP server is not connected.
 
 ### MCP (preferred)
 
 Get the `cloudId` from `getAccessibleAtlassianResources` — it is the site UUID, not the hostname.
 
 - **List tickets**: `searchJiraIssuesUsingJql` with `{cloudId, jql, maxResults:20, fields:["summary","status","issuetype","priority","updated"], responseContentFormat:"markdown"}`
-- **Get ticket with its comment thread** — one call, and `fields` must be passed explicitly, because the default field set silently omits `comment`, `attachment` and `issuelinks`:
+- **Get ticket** — `fields` must be passed explicitly, because the default field set silently omits `attachment` and `issuelinks`:
 
   ```
   getJiraIssue {
     cloudId,
     issueIdOrKey: "TICKET-KEY",
     fields: ["summary","description","status","issuetype","priority","labels",
-             "components","assignee","issuelinks","attachment","comment"],
+             "components","assignee","issuelinks","attachment"],
     responseContentFormat: "markdown"
   }
   ```
 
-  Comments come back in `fields.comment.comments`, each with `author.displayName`, `created` and `body`.
+- **Get the comment thread**: `listJiraIssueComments` with `{cloudId, issueIdOrKey, responseContentFormat:"html", view:"evidence"}`. Each comment has `author.displayName`, `author.accountId`, `created`, `body`, and `parentId` when it is a reply. Do not read comments from `getJiraIssue`: it can leave `comment` out even when `fields` lists it, so an empty result there does not mean the thread is empty.
+- **Download an attachment**: `executeRead` with `{name:"downloadJiraIssueAttachment", cloudId, inputs:{attachmentId, outputPath}}`. `attachmentId` is the numeric `id` from `fields.attachment`, not the media UUID in the body. The call returns a `downloadCommand` (`curl` with a short-lived URL). Run it right away, then open the saved file with the image reader.
+- **Add comment**: `addOrEditJiraIssueComment` with `{cloudId, issueIdOrKey, commentBody, contentFormat:"markdown"}`. To notify someone, use `contentFormat:"html"` with `<span data-type="mention" data-user-id="ACCOUNT_ID">@Name</span>`; the account ID is `author.accountId` on any of their comments.
 
-- **Add comment**: `addCommentToJiraIssue` with `{cloudId, issueIdOrKey, commentBody, contentFormat:"markdown"}`
+**Choosing the response format.** Use `markdown` normally. As soon as the issue or a comment has attachments, read it as `html`: markdown renders every embedded image as `![](blob:...)`, and a `blob:` URL is unreachable — the screenshot silently disappears. (`adf` is rejected as a response format.) In HTML each image is a media `<div>` whose `data-alt` is the attachment filename:
 
-If you call `getJiraIssue` without `fields`, you get no comments — that is a missing parameter, not a missing capability. Do not conclude the comment thread is empty and do not fall back to a token because of it.
-
-**Choosing the response format.** Use `markdown` normally. Switch to `responseContentFormat:"adf"` as soon as the issue has attachments, because markdown renders every embedded image as `![](blob:...)`, and a `blob:` URL is unreachable — the screenshot silently disappears. ADF keeps each image as a `media` node whose `attrs.alt` is the attachment filename:
-
-```json
-{"type":"media","attrs":{"type":"file","id":"0d29...","alt":"Screenshot 2026-07-17 at 12.36.17.png"}}
+```html
+<figure data-type="media-single"><div data-type="media" data-media-type="file" data-id="0d29..." data-alt="Screenshot 2026-07-17 at 12.36.17.png"></div></figure>
 ```
 
-That filename is what ties the image to the entry in `fields.attachment`, and its position in the document is what tells you which requirement or comment the screenshot belongs to.
+That filename is what ties the image to its entry, and its numeric `id`, in `fields.attachment`. Its position in the document tells you which requirement or comment the screenshot belongs to.
 
 ### Bash fallback (only when MCP is not connected)
 
@@ -161,6 +159,8 @@ That filename is what ties the image to the entry in `fields.attachment`, and it
 - **Add comment**: `bash SKILL_DIR/scripts/jira-api.sh comment TICKET-KEY "TEXT"`
 
 All four accept `--format json` for structured output. They read `ATLASSIAN_EMAIL` / `ATLASSIAN_API_TOKEN` from `.env` and fail with `CONFIG_MISSING` when those are empty — which is expected and harmless on an MCP-only setup.
+
+The scripts do not download attachments. Without MCP, ask the user to paste any load-bearing screenshot.
 
 ## GitHub Enterprise access
 
@@ -207,11 +207,11 @@ Read `MAIN_BRANCH` from `SKILL_DIR/.env` (default: `develop`). Use this value wh
 
 Work through the whole checklist before forming any opinion. This phase is read-only: no `git checkout`, no file writes.
 
-1. **Ticket body and comment thread** — one `getJiraIssue` call with the explicit `fields` list above (or `jira-api.sh get` + `comments` without MCP). Read the comments properly: requirements, repro details, the branch someone already started, and prior decisions are very often there rather than in the description. If `fields.attachment` is non-empty, re-read in `adf` format so the images stay tied to the text.
+1. **Ticket body and comment thread** — `getJiraIssue` with the explicit `fields` list above, plus `listJiraIssueComments` for the thread (or `jira-api.sh get` + `comments` without MCP). Read the comments properly: requirements, repro details, the branch someone already started, and prior decisions are very often there rather than in the description. If `fields.attachment` is non-empty, read the description as `html` so the images stay tied to the text.
 
-2. **Linked issues and screenshots** — note linked issue keys. For images, you can see *that* a screenshot exists, its filename, and which requirement or comment it sits under — but **you cannot see the image itself**. There is no MCP tool for attachment content, and the REST content URL returns 403 without a Jira token.
+2. **Linked issues and screenshots** — note linked issue keys. When the ticket points at another ticket for its spec, as an issue link or a link in the description, read that ticket's comments and screenshots too; designs are often revised there, and the latest one wins.
 
-   So do not guess what a screenshot shows, and never write "as shown in the screenshot" as if you had read it. Instead, list the filenames with where each one appears, then:
+   Download every screenshot that sits next to a requirement, a repro step, or a design comment, and look at it before forming an opinion: match its `data-alt` filename to `fields.attachment`, then use `downloadJiraIssueAttachment`. Describe only what you actually saw. If a download fails, never write "as shown in the screenshot", and:
 
    - If an image is load-bearing (it *is* the bug report, or the only spec for a layout), ask the user to paste it into the chat. Say which filename you need and what you are trying to learn from it. A missing load-bearing screenshot is an intel gap — treat it as one.
    - If the surrounding text already states the requirement, note the image as supporting evidence you could not read, and continue.
@@ -235,7 +235,7 @@ The ticket is ready to plan only if **all** of these hold:
 - The impact is traceable to specific code (you know which app/module/files change).
 - The expected result is stated, not inferred.
 - There is a concrete way to verify the fix.
-- Nothing essential lives only inside a screenshot you cannot read.
+- Nothing essential lives only inside a screenshot you could not download and read.
 
 If **any** of them fails, **stop**. Ask the user with a structured question that states, for each gap, **what is missing and why you need it**. Do not create a branch, do not edit code, do not guess a "reasonable" interpretation.
 
@@ -369,7 +369,7 @@ bash SKILL_DIR/scripts/gh-pr.sh pr feedback
 bash SKILL_DIR/scripts/gh-pr.sh pr feedback --since "$(git log -1 --format=%cI)"
 ```
 
-Also read the Jira comment thread (MCP `getJiraIssue` with `fields:["comment"]`) and apply the same cutoff — reviewers use whichever channel is convenient. If the user only asked you to *check*, report what you found and stop there.
+Also read the Jira comment thread (MCP `listJiraIssueComments`) and apply the same cutoff — reviewers use whichever channel is convenient. If the user only asked you to *check*, report what you found and stop there.
 
 **Step 2 — Triage, then start immediately.** Post one line per item, `[source] what was asked → what you will do`, and begin working in the same turn. Do not wait for approval on this list; it exists so the user can interrupt if you misread something, not to block you.
 
@@ -483,7 +483,7 @@ Always show the exact comment text in chat and post it only after the user confi
 2. **Use MCP for Jira whenever it is connected** — never ask the user for a Jira token that MCP makes unnecessary.
 3. **Recon before opinion** — read the ticket, its comments, and the actual code before saying anything about how to fix it.
 4. **Under-specified means stop** — ask what is missing and why; never guess your way past the intel gate.
-5. **Never describe a screenshot you could not read** — you get the filename and its position, not the pixels. Ask the user to paste it.
+5. **Look at screenshots before describing them** — download them with `downloadJiraIssueAttachment`. Never describe one you could not download; ask the user to paste it.
 6. **No edits before plan approval** — on new ticket work, the plan gate covers file writes, branch creation and formatters.
 7. **No commit or push before approval** — on new ticket work, show the diff stat and commit message first.
 8. **Never stash automatically** — a dirty worktree stops the workflow and gets escalated to the user.
