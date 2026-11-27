@@ -162,7 +162,7 @@ emit() {
 
 case "$CMD" in
   list)
-    JQL="${JIRA_LIST_JQL:-assignee = currentUser() AND status not in (Done, Cancelled) ORDER BY priority ASC, updated DESC}"
+    JQL="${JIRA_LIST_JQL:-assignee = currentUser() AND status not in (Done, Cancelled) ORDER BY priority DESC, updated DESC}"
     REQ=$(jq -n --arg jql "$JQL" \
       '{jql:$jql,fields:["summary","status","issuetype","priority","updated"],maxResults:20}')
     RESP=$(_curl -X POST "${API}/search/jql" -d "$REQ")

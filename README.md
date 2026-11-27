@@ -165,7 +165,7 @@ Jira operations go through the **Atlassian MCP** whenever it is available — li
 
 Two details worth knowing:
 
-`getJiraIssue` omits `attachment` and `issuelinks` from its default field set, so the skill always passes `fields` explicitly. Comments come from `listJiraIssueComments`, because `getJiraIssue` can leave them out even when asked. A ticket is not commentless just because `getJiraIssue` came back without comments.
+`getJiraIssue` needs `view:"full"` plus explicit `fields`: its default compact view drops issue links and the issue type even when you ask for them. Custom fields such as acceptance criteria come from a second call with `view:"evidence"`, which returns them by display name. Comments come from `listJiraIssueComments`, because `getJiraIssue` only reports how many there are.
 
 Screenshots are downloaded and read. In markdown responses every embedded image becomes an unreachable `![](blob:...)`, so tickets with attachments are read as HTML, where each image is a media node carrying the attachment filename — that ties a screenshot to the requirement it sits under. The skill then downloads the image through the MCP `downloadJiraIssueAttachment` operation and looks at it. Only when a download fails does it ask you to paste a load-bearing screenshot, rather than guessing what it shows.
 
@@ -214,7 +214,7 @@ jira-fix-skill/
 ### Custom JQL
 
 ```bash
-JIRA_LIST_JQL="project = MYPROJ AND assignee = currentUser() AND sprint in openSprints() ORDER BY priority ASC"
+JIRA_LIST_JQL="project = MYPROJ AND assignee = currentUser() AND sprint in openSprints() ORDER BY priority DESC"
 ```
 
 ### Custom test / lint / format commands

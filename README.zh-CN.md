@@ -165,7 +165,7 @@ GitHub token 不属于这个文件；连接了 MCP 时，Jira token 也不需要
 
 有两个坑值得知道：
 
-`getJiraIssue` 的默认字段集不含 `attachment` 和 `issuelinks`，所以 skill 总是显式传 `fields`。评论用 `listJiraIssueComments` 读，因为 `getJiraIssue` 即使指定了也可能不返回评论。`getJiraIssue` 没返回评论，不代表这个 ticket 没有评论。
+`getJiraIssue` 要同时传 `view:"full"` 和 `fields`：默认的 compact 视图会把关联工单和工单类型过滤掉，指定了也一样。验收标准这类自定义字段再用 `view:"evidence"` 调一次，会按字段名返回。评论用 `listJiraIssueComments` 读，因为 `getJiraIssue` 只返回评论数量。
 
 截图会下载下来看。markdown 格式会把内嵌图片渲染成无法访问的 `![](blob:...)`，所以带附件的 ticket 改用 HTML 读——那里每张图是一个 media 节点，带着附件文件名，能对上它属于哪条需求。然后 skill 通过 MCP 的 `downloadJiraIssueAttachment` 把图片下载下来看。只有下载失败时，才会请你把关键截图贴进对话，而不是猜图里是什么。
 
@@ -215,7 +215,7 @@ jira-fix-skill/
 ### 自定义 JQL
 
 ```bash
-JIRA_LIST_JQL="project = MYPROJ AND assignee = currentUser() AND sprint in openSprints() ORDER BY priority ASC"
+JIRA_LIST_JQL="project = MYPROJ AND assignee = currentUser() AND sprint in openSprints() ORDER BY priority DESC"
 ```
 
 ### 自定义测试 / lint / 格式化命令

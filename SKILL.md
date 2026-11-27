@@ -127,19 +127,22 @@ GitHub credentials are **not** stored here — they live in the `gh` credential 
 Get the `cloudId` from `getAccessibleAtlassianResources` — it is the site UUID, not the hostname.
 
 - **List tickets**: `searchJiraIssuesUsingJql` with `{cloudId, jql, maxResults:20, fields:["summary","status","issuetype","priority","updated"], responseContentFormat:"markdown"}`
-- **Get ticket** — `fields` must be passed explicitly, because the default field set silently omits `attachment` and `issuelinks`:
+- **Get ticket** — pass `view:"full"` together with `fields`. The default compact view filters `issuelinks` and `issuetype` out even when `fields` lists them, and the default field set leaves out `attachment`:
 
   ```
   getJiraIssue {
     cloudId,
     issueIdOrKey: "TICKET-KEY",
+    view: "full",
     fields: ["summary","description","status","issuetype","priority","labels",
              "components","assignee","issuelinks","attachment"],
     responseContentFormat: "markdown"
   }
   ```
 
-- **Get the comment thread**: `listJiraIssueComments` with `{cloudId, issueIdOrKey, responseContentFormat:"html", view:"evidence"}`. Each comment has `author.displayName`, `author.accountId`, `created`, `body`, and `parentId` when it is a reply. Do not read comments from `getJiraIssue`: it can leave `comment` out even when `fields` lists it, so an empty result there does not mean the thread is empty.
+- **Get custom fields** (acceptance criteria, steps to reproduce, expected result): a second `getJiraIssue` with `{cloudId, issueIdOrKey, view:"evidence"}` and no `fields`. It returns the site's custom fields under `fields.customFields`, keyed by display name, e.g. `"Acceptance Criteria"`; field IDs differ per site, so do not hard-code them. Passing `fields` would drop them, and this view returns no attachments, which is why it is a separate call.
+
+- **Get the comment thread**: `listJiraIssueComments` with `{cloudId, issueIdOrKey, responseContentFormat:"html", view:"evidence"}`. Each comment has `author.displayName`, `author.accountId`, `created`, `body`, and `parentId` when it is a reply. Do not read comments from `getJiraIssue`: it only reports how many there are, so a missing comment list there does not mean the thread is empty.
 - **Download an attachment**: `executeRead` with `{name:"downloadJiraIssueAttachment", cloudId, inputs:{attachmentId, outputPath}}`. `attachmentId` is the numeric `id` from `fields.attachment`, not the media UUID in the body. The call returns a `downloadCommand` (`curl` with a short-lived URL). Run it right away, then open the saved file with the image reader.
 - **Add comment**: `addOrEditJiraIssueComment` with `{cloudId, issueIdOrKey, commentBody, contentFormat:"markdown"}`. To notify someone, use `contentFormat:"html"` with `<span data-type="mention" data-user-id="ACCOUNT_ID">@Name</span>`; the account ID is `author.accountId` on any of their comments.
 
@@ -191,7 +194,7 @@ When user says things like "show my tickets", "what should I work on", "my Jira 
 
 **Jira: list tickets** (MCP or bash — see above)
 
-Default JQL: `assignee = currentUser() AND status not in (Done, Cancelled) ORDER BY priority ASC, updated DESC`
+Default JQL: `assignee = currentUser() AND status not in (Done, Cancelled) ORDER BY priority DESC, updated DESC`
 
 Present the tickets clearly. Let the user pick one, or suggest the highest-priority actionable ticket.
 
@@ -207,7 +210,7 @@ Read `MAIN_BRANCH` from `SKILL_DIR/.env` (default: `develop`). Use this value wh
 
 Work through the whole checklist before forming any opinion. This phase is read-only: no `git checkout`, no file writes.
 
-1. **Ticket body and comment thread** — `getJiraIssue` with the explicit `fields` list above, plus `listJiraIssueComments` for the thread (or `jira-api.sh get` + `comments` without MCP). Read the comments properly: requirements, repro details, the branch someone already started, and prior decisions are very often there rather than in the description. If `fields.attachment` is non-empty, read the description as `html` so the images stay tied to the text.
+1. **Ticket body and comment thread** — both `getJiraIssue` calls above (standard fields, then custom fields), plus `listJiraIssueComments` for the thread (or `jira-api.sh get` + `comments` without MCP). Acceptance criteria and repro steps often live in custom fields rather than in the description. Read the comments properly: requirements, repro details, the branch someone already started, and prior decisions are very often there rather than in the description. If `fields.attachment` is non-empty, read the description as `html` so the images stay tied to the text.
 
 2. **Linked issues and screenshots** — note linked issue keys. When the ticket points at another ticket for its spec, as an issue link or a link in the description, read that ticket's comments and screenshots too; designs are often revised there, and the latest one wins.
 
@@ -231,7 +234,7 @@ Report a short recon summary to the user before moving on.
 The ticket is ready to plan only if **all** of these hold:
 
 - The problem or goal is unambiguous.
-- Bugs have repro steps or a trigger condition; stories have acceptance criteria.
+- Bugs have repro steps or a trigger condition; stories have acceptance criteria. Check the custom fields, not only the description.
 - The impact is traceable to specific code (you know which app/module/files change).
 - The expected result is stated, not inferred.
 - There is a concrete way to verify the fix.
@@ -267,17 +270,18 @@ git status --short
 If anything is uncommitted or untracked, stop and ask the user how to handle it (commit, stash themselves, or discard). Continue only once the worktree is clean or the user explicitly tells you to proceed.
 
 ```bash
-git checkout MAIN_BRANCH
-git pull --ff-only
+git fetch origin
 
 BRANCH="feature/TICKET-KEY-short-description"
 if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
   git checkout "${BRANCH}"
-  git merge MAIN_BRANCH
+  git merge "origin/MAIN_BRANCH"
 else
-  git checkout -b "${BRANCH}"
+  git checkout --no-track -b "${BRANCH}" "origin/MAIN_BRANCH"
 fi
 ```
+
+Start from `origin/MAIN_BRANCH`, never the local `MAIN_BRANCH`: a local copy that is behind would put stale code under the branch, and one that has diverged makes `git pull --ff-only` stop the workflow. For the same reason, every diff below compares against `origin/MAIN_BRANCH...HEAD`, the changes since the branch point.
 
 Branch prefix is always `feature/`, regardless of ticket type (Bug, Story, Task, Chore). Never use a `fix/` prefix for branch names. Generate a short kebab-case suffix from the ticket summary (3-5 words max).
 
@@ -296,8 +300,8 @@ Then run format and lint, if configured. Fix lint errors and re-run until clean.
 #### Phase 6 — Code review (mandatory, before the push gate)
 
 1. **Look for a review skill in the current project.** Search `.cursor/skills/`, `.agents/skills/`, `.claude/skills/`, `.codex/skills/` and the skills available in the session for one whose name or description mentions "review".
-2. **If a review skill exists**: invoke it on the feature branch diff against `MAIN_BRANCH` and follow its workflow. Do not pick a skill that reviews a *published PR URL* — at this point nothing is pushed.
-3. **If no review skill exists**: review it yourself. Run `git diff MAIN_BRANCH` and check: does the change fully address the ticket, are there bugs or unhandled edge cases, is the code consistent with the surrounding codebase, is test coverage adequate.
+2. **If a review skill exists**: invoke it on the feature branch diff against `origin/MAIN_BRANCH` and follow its workflow. Do not pick a skill that reviews a *published PR URL* — at this point nothing is pushed.
+3. **If no review skill exists**: review it yourself. Run `git diff origin/MAIN_BRANCH...HEAD` and check: does the change fully address the ticket, are there bugs or unhandled edge cases, is the code consistent with the surrounding codebase, is test coverage adequate.
 4. **Fix every valid issue**, then re-run Phase 5 until clean.
 5. Summarize the findings and the fixes for the user.
 
@@ -306,7 +310,7 @@ Then run format and lint, if configured. Fix lint errors and re-run until clean.
 Present, in the chat:
 
 - what changed, in 2-3 lines
-- `git diff MAIN_BRANCH --stat`
+- `git diff --stat origin/MAIN_BRANCH...HEAD`
 - verification evidence (test/lint results)
 - the exact commit message
 
@@ -384,7 +388,7 @@ Also read the Jira comment thread (MCP `listJiraIssueComments`) and apply the sa
 
 Everything else is just work — naming, null checks, extracted helpers, missing tests, copy fixes. Never hold the whole batch hostage to one unclear comment: ship the rest and ask about that one.
 
-**Step 4 — Make targeted fixes.** Check the current state with `git diff MAIN_BRANCH` and change only what was flagged. Do not rewrite from scratch and do not slip in unrelated improvements. If the code review in Step 6 finds a real problem outside the feedback, report it rather than silently expanding the diff.
+**Step 4 — Make targeted fixes.** Check the current state with `git diff origin/MAIN_BRANCH...HEAD` and change only what was flagged. Do not rewrite from scratch and do not slip in unrelated improvements. If the code review in Step 6 finds a real problem outside the feedback, report it rather than silently expanding the diff.
 
 **Step 5 — Test, format, lint** (same as Phase 5).
 
