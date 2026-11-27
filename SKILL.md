@@ -75,7 +75,7 @@ Use the `DefaultBranch` from Step 2 as `MAIN_BRANCH`. Confirm it with the user, 
 
 **Step 5 — Check for Atlassian MCP:**
 
-Call `getAccessibleAtlassianResources` on the `plugin-atlassian-atlassian` MCP server. The response also gives you the `cloudId` for the site — record it.
+Call `getAccessibleAtlassianResources` on the `plugin-atlassian-atlassian` MCP server to check that it is connected. There is no `cloudId` to record: every Jira tool also accepts the site hostname from step 1.
 
 - **If MCP responds**: tell the user Jira will go through MCP, and **skip token creation entirely**. Go to Step 6.
 - **If MCP is not available**: tell the user it can be enabled in Cursor Settings → MCP, and that without it the skill needs a Jira API token. Do Step 6 and Step 7.
@@ -85,6 +85,15 @@ Call `getAccessibleAtlassianResources` on the `plugin-atlassian-atlassian` MCP s
 ```bash
 cp SKILL_DIR/.env.example SKILL_DIR/.env
 chmod 600 SKILL_DIR/.env
+```
+
+A project install (`.agents/skills/` inside a repository) puts `.env` in the user's repo. Make sure it can never be committed:
+
+```bash
+if git -C SKILL_DIR rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+   && ! git -C SKILL_DIR check-ignore -q .env; then
+  printf '.env\n' >> SKILL_DIR/.gitignore
+fi
 ```
 
 Write `JIRA_URL` (step 1) and `MAIN_BRANCH` (step 4). With MCP connected, that is all `.env` needs — leave `ATLASSIAN_EMAIL` and `ATLASSIAN_API_TOKEN` empty.
@@ -124,7 +133,7 @@ GitHub credentials are **not** stored here — they live in the `gh` credential 
 
 ### MCP (preferred)
 
-Get the `cloudId` from `getAccessibleAtlassianResources` — it is the site UUID, not the hostname.
+`cloudId` accepts the site hostname from `JIRA_URL` (e.g. `your-site.atlassian.net`), any Jira URL, or the site UUID. Call `getAccessibleAtlassianResources` only when you have none of them.
 
 - **List tickets**: `searchJiraIssuesUsingJql` with `{cloudId, jql, maxResults:20, fields:["summary","status","issuetype","priority","updated"], responseContentFormat:"markdown"}`
 - **Get ticket** — pass `view:"full"` together with `fields`. The default compact view filters `issuelinks` and `issuetype` out even when `fields` lists them, and the default field set leaves out `attachment`:

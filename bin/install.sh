@@ -92,6 +92,13 @@ install_to() {
   else
     echo "  ✓ Installed to $dest ($label)"
   fi
+
+  # A project install lands inside the user's repository, where .env is not ignored by default.
+  if git -C "$dest" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+     && ! git -C "$dest" check-ignore -q .env; then
+    printf '.env\n' >> "$dest/.gitignore"
+    echo "    + Added .env to $dest/.gitignore so it is never committed"
+  fi
 }
 
 echo ""

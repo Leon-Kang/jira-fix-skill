@@ -86,6 +86,9 @@ mkdir -p "$TARGET/scripts"
 cp SKILL.md .env.example "$TARGET/"
 cp scripts/*.sh "$TARGET/scripts/"
 chmod +x "$TARGET/scripts/"*.sh
+
+# Inside a project (.agents/skills/), keep your .env out of its commits
+printf '.env\n' >> "$TARGET/.gitignore"
 ```
 
 ## Setup
@@ -204,7 +207,9 @@ jira-fix-skill/
 ├── scripts/
 │   ├── jira-api.sh   # Jira: list, get, comments, comment
 │   └── gh-pr.sh      # GitHub / GHES: repo detect, pr find/create/feedback
-├── README.md
+├── docs/             # Design specs and implementation plans
+├── README.md         # English
+├── README.zh-CN.md   # 中文
 ├── LICENSE
 └── .gitignore
 ```
