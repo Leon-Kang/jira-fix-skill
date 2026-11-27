@@ -774,61 +774,33 @@ if [[ "$GROUP" != "branches" && -n "${1:-}" && "${1:-}" != -* ]]; then
 fi
 
 while [[ $# -gt 0 ]]; do
-  arg="$1"
-  val=""
-  has_eq="false"
-  if [[ "$arg" == --*=* ]]; then
-    has_eq="true"
-    val="${arg#*=}"
-    arg="${arg%%=*}"
+  if [[ "$1" == --*=* ]]; then
+    name="${1%%=*}"
+    value="${1#*=}"
+    step=1
+  else
+    name="$1"
+    value="${2-}"
+    step=2
   fi
 
-  next_val() {
-    local opt_name="$1"
-    if [[ "$has_eq" == "true" ]]; then
-      printf '%s' "$val"
-      return 0
-    fi
-    [[ $# -ge 2 ]] || die INVALID_INPUT "${opt_name} requires a value."
-    printf '%s' "$2"
-  }
-
-  case "$arg" in
-    --format)
-      FORMAT="$(next_val --format "$@")"
-      [[ "$has_eq" == "true" ]] && shift || shift 2
-      ;;
-    --key)
-      ISSUE_KEY="$(next_val --key "$@")"
-      [[ "$has_eq" == "true" ]] && shift || shift 2
-      ;;
-    --title)
-      TITLE="$(next_val --title "$@")"
-      [[ "$has_eq" == "true" ]] && shift || shift 2
-      ;;
-    --source)
-      SOURCE="$(next_val --source "$@")"
-      [[ "$has_eq" == "true" ]] && shift || shift 2
-      ;;
-    --target)
-      TARGET="$(next_val --target "$@")"
-      [[ "$has_eq" == "true" ]] && shift || shift 2
-      ;;
-    --body)
-      BODY="$(next_val --body "$@")"
-      [[ "$has_eq" == "true" ]] && shift || shift 2
-      ;;
-    --body-file)
-      BODY_FILE="$(next_val --body-file "$@")"
-      [[ "$has_eq" == "true" ]] && shift || shift 2
-      ;;
-    --pr)
-      PR_REF="$(next_val --pr "$@")"
-      [[ "$has_eq" == "true" ]] && shift || shift 2
-      ;;
-    --since)
-      SINCE="$(next_val --since "$@")"
-      [[ "$has_eq" == "true" ]] && shift || shift 2
+  case "$name" in
+    --format | --key | --title | --source | --target | --body | --body-file | --pr | --since)
+      if [[ "$step" == 2 && ( $# -lt 2 || "$value" == --* ) ]]; then
+        die INVALID_INPUT "${name} requires a value. Run 'gh-pr.sh --help' for usage."
+      fi
+      case "$name" in
+        --format) FORMAT="$value" ;;
+        --key) ISSUE_KEY="$value" ;;
+        --title) TITLE="$value" ;;
+        --source) SOURCE="$value" ;;
+        --target) TARGET="$value" ;;
+        --body) BODY="$value" ;;
+        --body-file) BODY_FILE="$value" ;;
+        --pr) PR_REF="$value" ;;
+        --since) SINCE="$value" ;;
+      esac
+      shift "$step"
       ;;
     --include-resolved)
       INCLUDE_RESOLVED="true"
