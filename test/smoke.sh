@@ -110,10 +110,10 @@ case "$args" in
     printf '%s\n' '[{"user":{"login":"reviewer"},"body":"second page","html_url":"u4","created_at":"2026-09-05T12:00:00Z"}]'
     ;;
   *"pulls/42/reviews"*)
-    printf '%s\n' '[{"user":{"login":"cursor-enterprise[bot]"},"body":"<!-- BUGBOT_REVIEW -->\nfound 2 issues","state":"COMMENTED","html_url":"r1","submitted_at":"2026-09-05T10:30:00Z"},{"user":{"login":"cursor-enterprise[bot]"},"body":"<!-- BUGBOT_REVIEW_STALE -->\nstale","state":"COMMENTED","html_url":"r2","submitted_at":"2026-09-05T10:31:00Z"},{"user":{"login":"reviewer"},"body":"","state":"COMMENTED","html_url":"r3","submitted_at":"2026-09-05T10:32:00Z"},{"user":{"login":"reviewer"},"body":"needs work","state":"CHANGES_REQUESTED","html_url":"r4","submitted_at":"2026-09-05T10:45:00Z"}]'
+    printf '%s\n' '[{"id":1,"user":{"login":"review-bot[bot]"},"body":"found 1 issue","state":"COMMENTED","html_url":"r1","submitted_at":"2026-09-05T10:30:00Z"},{"id":2,"user":{"login":"reviewer"},"body":"see inline","state":"COMMENTED","html_url":"r2","submitted_at":"2026-09-05T10:31:00Z"},{"id":3,"user":{"login":"reviewer"},"body":"","state":"COMMENTED","html_url":"r3","submitted_at":"2026-09-05T10:32:00Z"},{"id":4,"user":{"login":"reviewer"},"body":"needs work","state":"CHANGES_REQUESTED","html_url":"r4","submitted_at":"2026-09-05T10:45:00Z"}]'
     ;;
   "api graphql"*)
-    printf '%s' '{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"isResolved":true,"isOutdated":false,"path":"a.ts","line":1,"comments":{"nodes":[{"author":{"login":"cursor-enterprise"},"body":"inline resolved","url":"c1","createdAt":"2026-09-05T10:15:00Z"}]}},{"isResolved":false,"isOutdated":false,"path":"b.ts","line":7,"comments":{"nodes":[{"author":{"login":"reviewer"},"body":"inline open","url":"c2","createdAt":"2026-09-05T10:20:00Z"}]}}]}}}}}'
+    printf '%s' '{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"isResolved":true,"isOutdated":false,"path":"a.ts","line":1,"comments":{"nodes":[{"author":{"login":"review-bot"},"body":"inline resolved","url":"c1","createdAt":"2026-09-05T10:15:00Z","pullRequestReview":{"databaseId":1}}]}},{"isResolved":false,"isOutdated":false,"path":"b.ts","line":7,"comments":{"nodes":[{"author":{"login":"reviewer"},"body":"inline open","url":"c2","createdAt":"2026-09-05T10:20:00Z","pullRequestReview":{"databaseId":2}}]}}]}}}}}'
     ;;
   *)
     printf 'fake gh: no route for: %s\n' "$args" >&2
@@ -212,15 +212,16 @@ expect_eq "pr find --pr NUMBER" "$(gh_pr pr find --pr 42 --format json | jq -r '
 expect_eq "pr find with no open PR prints null" "$(gh_pr pr find --source feature/none --format json)" "null"
 
 out="$(gh_pr pr feedback --pr 42 --since 2026-09-05T18:30:00+09:00 --format json)"
-expect_eq "feedback: +09:00 cutoff, pagination, resolved/self/wrapper filtering, sort order" \
+expect_eq "feedback: +09:00 cutoff, pagination, resolved/self/settled-summary filtering, sort order" \
   "$(jq -c '[.feedback[].body]' <<<"$out")" \
-  '["after the cutoff","inline open","needs work","second page"]'
+  '["after the cutoff","inline open","see inline","needs work","second page"]'
+expect_eq "feedback items carry no internal review id" "$(jq -c '[.feedback[] | has("reviewId")] | any' <<<"$out")" "false"
 expect_eq "feedback excludes the authenticated user" "$(jq -r '.excludedViewer' <<<"$out")" "me"
 
 out="$(gh_pr pr feedback --pr=42 --include-resolved --include-self --format=json)"
 expect_contains "feedback --include-resolved keeps resolved threads" "$(jq -c '[.feedback[].body]' <<<"$out")" "inline resolved"
 expect_contains "feedback --include-self keeps own comments" "$(jq -c '[.feedback[].body]' <<<"$out")" "my own reply"
-expect_not_contains "Bugbot review wrappers are always dropped" "$(jq -c '[.feedback[].body]' <<<"$out")" "BUGBOT"
+expect_contains "feedback --include-resolved keeps settled review summaries" "$(jq -c '[.feedback[].body]' <<<"$out")" "found 1 issue"
 
 expect_eq "pr checks: pending exit code 8 still parses" "$(gh_pr pr checks --pr 42 --format json | jq -r '.overall')" "pending"
 expect_eq "pr checks: reports the review decision and merge state" \

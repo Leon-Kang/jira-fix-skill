@@ -1,6 +1,6 @@
 {
   "name": "jira-fix-skill",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "AI agent skill: Jira ticket → recon → approved plan → code fix → GitHub Enterprise draft PR",
   "bin": {
     "jira-fix-skill": "bin/install.sh"

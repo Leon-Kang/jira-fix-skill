@@ -18,7 +18,7 @@ ticket → recon → intel gate → plan gate → code → verify → review →
 
 ## Gates
 
-On new work, never skip a gate and never fold one into the next step:
+On new work, never skip a gate unless the user explicitly says to for this ticket, and never fold one into the next step:
 
 1. **Intel gate** — under-specified ticket → name each gap and why it matters, then stop.
 2. **Plan gate** — six-section plan, then wait for explicit approval before any branch, file write, or formatter run.
@@ -62,7 +62,7 @@ Read bodies as `html`: markdown turns images into unreachable `blob:` links, and
 
 Without MCP, use `bash SKILL_DIR/scripts/jira-api.sh list|get|comments|comment` (see `--help`). It accepts keys or `/browse/` URLs but cannot download images, so ask the user to paste any load-bearing one.
 
-**GitHub — `bash SKILL_DIR/scripts/gh-pr.sh`** (fork-aware, `--format json`, `--help`): `repo detect` · `branches --key` · `pr find` · `pr create` (draft, idempotent, `--dry-run`) · `pr feedback` (drops resolved threads, your own replies and bot review summaries; `--since` compares instants) · `pr checks`.
+**GitHub — `bash SKILL_DIR/scripts/gh-pr.sh`** (fork-aware, `--format json`, `--help`): `repo detect` · `branches --key` · `pr find` · `pr create` (draft, idempotent, `--dry-run`) · `pr feedback` (drops resolved threads, review summaries whose threads are all resolved, and your own replies; `--since` compares instants) · `pr checks`.
 
 **Verification commands**, first match wins: `LOCAL.md` and the repository's `AGENTS.md` / `CLAUDE.md`; `TEST_CMD` / `LINT_CMD` / `FMT_CMD` in `.env`; `package.json` scripts with the lockfile's package manager. Nothing found → skip it; never invent a command.
 
@@ -79,7 +79,7 @@ List with the JQL above, present the tickets plainly, and let the user pick. Nev
 1. Confirm the ticket belongs to this repository: platform, service, the `LOCAL.md` mapping. If not, switch to the right checkout.
 2. Read the ticket, its custom fields, and every comment. Follow linked tickets, Confluence pages, and Figma links for the spec; designs get revised in comments, and the latest one wins. Download each relevant image to `/tmp/jira-fix-KEY/`, never into a repository, and look at it.
 3. Check prior work: `gh-pr.sh branches --key KEY` and `gh-pr.sh pr find`.
-4. Read the repository's and the module's `AGENTS.md`, then the code. **Read at most 8 source files in full**; locate everything else with search and cite the paths. If 8 is not enough, list the unread files in the summary and say why they matter.
+4. Read the repository's and the module's `AGENTS.md`, then the code. Locate with search first; read in full the files the change touches or directly depends on, and cite the rest by path. Naming a file is not reading it.
 5. Run `git log --oneline -20 -- <paths>` and decide how the fix will be verified.
 
 Report a **Recon Summary**: target repository and branch/worktree state · ticket type and ask · files read · verification path.
@@ -101,7 +101,7 @@ Otherwise stop and ask, and offer to post the questions on Jira.
 1. Understanding / root cause
 2. Files
 3. Change plan
-4. Verification
+4. Verification: tests, commands, and the `TEST_URL_PATTERN` link with `{TICKET_NUMBER}` filled in, if it is set
 5. Risk
 6. Branch `feature/KEY-three-to-five-words` and commit `type(scope): KEY module - description` (`feat` for stories, `fix` for bugs, else `refactor` / `chore` / `docs`)
 
@@ -120,14 +120,14 @@ fi
 
 A merge conflict means stop and ask.
 
-**Phase 4 — Implement** the approved plan and nothing else. The repository's test policy (`LOCAL.md`, `AGENTS.md`) decides about tests; where new tests are allowed, cover non-UI logic. If the plan turns out wrong, go back to Phase 2.
+**Phase 4 — Implement** the approved plan and nothing else. Add or update tests for the change, unless `LOCAL.md` or the repository's rules say otherwise. If the plan turns out wrong, go back to Phase 2.
 
 **Phase 5 — Verify** with the resolved commands. Fix what your change broke, up to 3 attempts; leave pre-existing warnings in other files alone.
 
 **Phase 6 — Review.**
 
 1. Run `git status --short`, then stage only the intended files: `git add -- <files>`.
-2. Review the staged diff with a local-diff review skill or the repository's review rules, or yourself: `git diff --cached "$(git merge-base origin/MAIN_BRANCH HEAD)"`.
+2. Review the staged diff with a local-diff review skill or the repository's review rules, or yourself: `git diff --cached "$(git merge-base origin/MAIN_BRANCH HEAD)"`. Check that it fully addresses the ticket, handles the edge cases, matches the surrounding code, and carries the tests the repository expects.
 3. Fix the findings, re-verify, and summarize what you found and fixed.
 
 **Phase 7 — Push gate.** Show what changed in 2-3 lines, `git diff --cached --stat "$(git merge-base origin/MAIN_BRANCH HEAD)"`, the verification results, and the exact commit message. After approval: `git commit -m "…" && git push -u origin "${BRANCH}"`.
@@ -143,8 +143,9 @@ No gates.
    - clear and in scope → fix it;
    - a question, or a claim the code contradicts → check the code and draft a reply;
    - ambiguous, reviewers disagree, outside this diff, an API or schema change, or in conflict with the acceptance criteria → ask about that item only, and ship the rest.
-3. Stage only what you changed, verify (Phase 5), review (Phase 6), then `git commit -m "fix(scope): KEY module - address review feedback" && git push`. Never `--force-with-lease` without approval.
-4. Report the changes and any drafted replies, and offer a Jira comment.
+3. Change only what was flagged. A real problem you find outside the feedback gets reported, not fixed silently in this diff.
+4. Stage only what you changed, verify (Phase 5), review (Phase 6), then `git commit -m "fix(scope): KEY module - address review feedback" && git push`. Never `--force-with-lease` without approval.
+5. Report the changes and any drafted replies, and offer a Jira comment.
 
 ## Workflow 4 — plan only
 
@@ -166,7 +167,9 @@ https://your-site.atlassian.net/browse/PROJ-482
 - Hide the react action on outgoing voice messages
 ```
 
-Jira comment: at most 3 lines and 200 characters, outcome and links only:
+Nothing else: no test logs, checkboxes, checklists, restated ticket text, screenshots you did not take, or "please review".
+
+Jira comment: at most 3 lines and 200 characters, outcome and links only, no filler. Without a PR, the second line is `Branch: <branch>`; the `TEST_URL_PATTERN` link may be the third.
 
 ```
 Fixed: header overlap on mobile nav.
@@ -180,6 +183,6 @@ PR: https://your-host.ghe.com/org/repo/pull/123
 | "It's a small fix, skip the plan" | Present the plan and wait. |
 | "I'll stash their changes for now" | Never stash. Use a worktree, or ask. |
 | "Save the screenshot to `./`" | `/tmp/jira-fix-KEY/` only, and stage explicit files. |
-| "I'll add a test anyway" | The repository's test policy decides. |
 | "The reviewer said so, just change it" | Check the code first; reply or escalate if it conflicts. |
-| "Read every related file to be safe" | 8 files in full; search for the rest. |
+| "While I'm here, I'll fix this too" | Report it; feedback fixes touch only what was flagged. |
+| "Read every related file to be safe" | Search first; read in full what the change touches. |

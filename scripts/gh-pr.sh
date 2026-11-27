@@ -107,7 +107,8 @@ BEHAVIOUR
   "pr create" is idempotent: if an open pull request already exists for the same source
   branch it is returned instead of opening a second one. New pull requests default to draft.
   "pr feedback" paginates all comments/reviews/threads, compares --since as UTC instants,
-  and filters out resolved threads, stale bot wrappers, and your own replies by default.
+  and filters out resolved threads, review summaries whose inline threads are all resolved,
+  and your own replies by default.
 
 EXAMPLES
   gh-pr.sh repo detect --format json
@@ -593,7 +594,7 @@ cmd_pr_feedback() {
 
   # Prefer GraphQL reviewThreads so resolved threads are filtered accurately.
   local gql_query inline_items="[]" cursor="" has_next="true" gql_ok="true"
-  gql_query='query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){pageInfo{hasNextPage endCursor} nodes{isResolved isOutdated path line comments(first:100){nodes{author{login} body url createdAt}}}}}}}'
+  gql_query='query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){pageInfo{hasNextPage endCursor} nodes{isResolved isOutdated path line comments(first:100){nodes{author{login} body url createdAt pullRequestReview{databaseId}}}}}}}}'
 
   while [[ "$has_next" == "true" ]]; do
     local gql_args=(api graphql --hostname "$HOST" -f "query=${gql_query}" -F "owner=${r_owner}" -F "name=${r_name}" -F "number=${number}")
@@ -618,7 +619,8 @@ cmd_pr_feedback() {
             createdAt: (.createdAt // ""),
             state: "",
             path: (($t.path // "") + (if $t.line then ":\($t.line)" else "" end)),
-            resolved: ($t.isResolved == true)
+            resolved: ($t.isResolved == true),
+            reviewId: (.pullRequestReview.databaseId // null)
           }
       ]')"
     has_next="$(printf '%s' "$gql_out" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage // false')"
@@ -636,7 +638,8 @@ cmd_pr_feedback() {
         createdAt: (.created_at // ""),
         state: "",
         path: ((.path // "") + (if .line then ":\(.line)" elif .original_line then ":\(.original_line)" else "" end)),
-        resolved: null
+        resolved: null,
+        reviewId: (.pull_request_review_id // null)
       }]')"
     else
       printf 'WARNING: could not read inline review comments via REST either.\n' >&2
@@ -645,8 +648,14 @@ cmd_pr_feedback() {
   fi
 
   local payload
+  # A COMMENTED review whose inline threads are all resolved is a settled summary.
   payload="$(jq -n "$JQ_TIME_HELPERS"'
-    (
+    ($inline // []) as $inl
+    | ([$inl[] | select(.reviewId != null)]
+        | group_by(.reviewId)
+        | map({ key: (.[0].reviewId | tostring), value: (map(.resolved == true) | all) })
+        | from_entries) as $settled
+    | (
       (($conv // []) | map({
         kind: "comment",
         author: (.user.login // "unknown"),
@@ -658,11 +667,7 @@ cmd_pr_feedback() {
         resolved: false
       }))
       + (($reviews // [])
-        | map(select(
-            ((.body // "") | contains("<!-- BUGBOT_REVIEW_STALE -->") | not)
-            and (((.state // "") == "COMMENTED" and ((.body // "") | contains("<!-- BUGBOT_REVIEW -->"))) | not)
-            and (((.body // "") | gsub("^\\s+|\\s+$";"")) != "" or (.state // "") != "COMMENTED")
-          ))
+        | map(select(((.body // "") | gsub("^\\s+|\\s+$";"")) != "" or (.state // "") != "COMMENTED"))
         | map({
             kind: "review",
             author: (.user.login // "unknown"),
@@ -671,14 +676,15 @@ cmd_pr_feedback() {
             createdAt: (.submitted_at // ""),
             state: (.state // ""),
             path: "",
-            resolved: false
+            resolved: ((.state // "") == "COMMENTED" and $settled[(.id | tostring)] == true)
           }))
-      + ($inline // [])
+      + $inl
     )
     | map(select($inc_res == "true" or .resolved != true))
     | map(select($viewer == "" or ((.author | norm_login) != ($viewer | norm_login))))
     | map(select($since == "" or (.createdAt | is_after($since))))
     | sort_by(.createdAt | to_epoch_ms // 0)
+    | map(del(.reviewId))
     | { pullRequest: $pr, excludedViewer: (if $viewer == "" then null else $viewer end), feedback: . }
   ' \
     --argjson pr "$pr" \
