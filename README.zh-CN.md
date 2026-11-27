@@ -82,8 +82,9 @@ git clone https://github.com/Leon-Kang/jira-fix-skill.git .agents/skills/jira-fi
 ```bash
 # 选一个平台路径，或用 .agents/skills/ 跨平台通用
 TARGET=~/.cursor/skills/jira-fix   # 或 ~/.claude/skills/ 或 ~/.codex/skills/
-mkdir -p "$TARGET/scripts"
+mkdir -p "$TARGET/scripts" "$TARGET/references"
 cp SKILL.md .env.example "$TARGET/"
+cp references/*.md "$TARGET/references/"
 cp scripts/*.sh "$TARGET/scripts/"
 chmod +x "$TARGET/scripts/"*.sh
 
@@ -201,14 +202,19 @@ printf 'Fixed: ...\nPR: https://...\n' | bash scripts/jira-api.sh comment PROJ-1
 ```
 jira-fix-skill/
 ├── SKILL.md          # Skill 定义文件（AI 读取）
+├── LOCAL.md          # 可选：你的工作区规则，最先读取（安装和升级都不会覆盖）
 ├── .env.example      # 配置模板
 ├── .env              # 你的本地配置（已 gitignore）
 ├── package.json      # npm 包（支持 npx 安装）
 ├── bin/
 │   └── install.sh    # 交互式安装脚本
+├── references/
+│   └── setup.md      # 首次设置，只在缺少 .env 时读取
 ├── scripts/
 │   ├── jira-api.sh   # Jira：list、get、comments、comment
-│   └── gh-pr.sh      # GitHub / GHES：repo detect、pr find/create/feedback
+│   └── gh-pr.sh      # GitHub / GHES：repo detect、branches、pr find/create/feedback/checks
+├── test/
+│   └── smoke.sh      # 离线冒烟测试（假 gh 和 curl）：npm test
 ├── docs/             # 设计文档和实施计划
 ├── README.md         # English
 ├── README.zh-CN.md   # 中文
@@ -217,6 +223,17 @@ jira-fix-skill/
 ```
 
 ## 自定义
+
+### 工作区规则（`LOCAL.md`）
+
+属于你自己工作区、而不属于 skill 本身的规则，写进 `SKILL.md` 旁边的 `LOCAL.md`：工单属于哪个仓库、能不能加新测试、你的仓库用什么 lint 和格式化命令、内部域名等。skill 会最先读它，并让它覆盖默认规则；安装和升级都不会动它，所以 `SKILL.md` 本身可以和发布版保持一致。
+
+```markdown
+# 工作区规则 — 覆盖 SKILL.md
+- Web 工单 → ~/work/web，App 工单 → ~/work/app
+- 不新增测试文件或测试用例；只更新被你的改动影响的已有测试
+- 用 `yarn run lint:changed` 和 `yarn run dprint fmt --allow-no-files <files>` 验证
+```
 
 ### 自定义 JQL
 

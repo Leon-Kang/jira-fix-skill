@@ -726,8 +726,16 @@ cmd_pr_checks() {
     die API_ERROR "gh pr checks failed for ${target_ref}#${number} (exit ${rc}): $(brief "${err:-$out}")"
   fi
 
+  # Green checks plus an "LGTM" comment can still be unmergeable: a comment is
+  # not an approval, and a required review keeps the PR blocked.
+  local review
+  review="$(gh pr view "$number" --repo "$target_ref" --json reviewDecision,mergeStateStatus 2>/dev/null \
+    | jq -c '{decision: (.reviewDecision // null | if . == "" then null else . end), mergeState: (.mergeStateStatus // null)}' 2>/dev/null)" \
+    || review=""
+  [[ -n "$review" ]] || review='{"decision":null,"mergeState":null}'
+
   local payload
-  payload="$(jq -n --argjson pr "$pr" --argjson raw "$out" '
+  payload="$(jq -n --argjson pr "$pr" --argjson raw "$out" --argjson review "$review" '
     ($raw | map({
       name: (.name // "unnamed"),
       state: ((.state // "") | ascii_upcase),
@@ -740,7 +748,7 @@ cmd_pr_checks() {
         elif ($checks | any(.bucket == "pending" or (.state | IN("PENDING","IN_PROGRESS","QUEUED","EXPECTED")))) then "pending"
         else "pass" end
       ) as $overall
-    | { pullRequest: $pr, overall: $overall, checks: $checks }
+    | { pullRequest: $pr, overall: $overall, review: $review, checks: $checks }
   ')"
 
   if [[ "$FORMAT" == "json" ]]; then
@@ -749,7 +757,7 @@ cmd_pr_checks() {
   fi
 
   printf '%s' "$payload" | jq -r '
-    "PR #\(.pullRequest.id)  overall=\(.overall)  (\(.checks | length) checks)",
+    "PR #\(.pullRequest.id)  overall=\(.overall)  (\(.checks | length) checks)  review=\(.review.decision // "unknown")  merge=\(.review.mergeState // "unknown")",
     (.checks[] | "  [\(.bucket // .state)] \(.name)\(if .url then " — \(.url)" else "" end)")'
 }
 

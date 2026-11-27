@@ -82,8 +82,9 @@ git clone https://github.com/Leon-Kang/jira-fix-skill.git .agents/skills/jira-fi
 ```bash
 # Pick your platform — or use .agents/skills/ for cross-platform
 TARGET=~/.cursor/skills/jira-fix   # or ~/.claude/skills/ or ~/.codex/skills/
-mkdir -p "$TARGET/scripts"
+mkdir -p "$TARGET/scripts" "$TARGET/references"
 cp SKILL.md .env.example "$TARGET/"
+cp references/*.md "$TARGET/references/"
 cp scripts/*.sh "$TARGET/scripts/"
 chmod +x "$TARGET/scripts/"*.sh
 
@@ -201,14 +202,19 @@ Run either script with `--help` for full usage.
 ```
 jira-fix-skill/
 ├── SKILL.md          # Skill definition (the AI reads this)
+├── LOCAL.md          # Optional: your workspace rules, read first (never overwritten)
 ├── .env.example      # Template for configuration
 ├── .env              # Your local config (gitignored)
 ├── package.json      # npm package (enables npx install)
 ├── bin/
 │   └── install.sh    # Interactive installer
+├── references/
+│   └── setup.md      # First-time setup, read only when .env is missing
 ├── scripts/
 │   ├── jira-api.sh   # Jira: list, get, comments, comment
-│   └── gh-pr.sh      # GitHub / GHES: repo detect, pr find/create/feedback
+│   └── gh-pr.sh      # GitHub / GHES: repo detect, branches, pr find/create/feedback/checks
+├── test/
+│   └── smoke.sh      # Offline smoke test (fake gh and curl): npm test
 ├── docs/             # Design specs and implementation plans
 ├── README.md         # English
 ├── README.zh-CN.md   # 中文
@@ -217,6 +223,17 @@ jira-fix-skill/
 ```
 
 ## Customization
+
+### Workspace rules (`LOCAL.md`)
+
+Put rules that belong to your workspace rather than to the skill in `LOCAL.md` next to `SKILL.md`: which repository a ticket belongs to, whether new tests are allowed, which lint and format commands your repos use, internal hostnames. The skill reads it before anything else and lets it override its defaults, and installs and upgrades leave it alone — so `SKILL.md` itself can stay identical to the published version.
+
+```markdown
+# Workspace rules — override SKILL.md
+- Web tickets → ~/work/web, app tickets → ~/work/app
+- Never add new test files or test cases; only update existing ones your change breaks
+- Verify with `yarn run lint:changed` and `yarn run dprint fmt --allow-no-files <files>`
+```
 
 ### Custom JQL
 

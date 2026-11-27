@@ -69,9 +69,10 @@ install_to() {
 
   [[ -f "$dest/SKILL.md" ]] && is_upgrade=true
 
-  mkdir -p "$dest/scripts"
+  mkdir -p "$dest/scripts" "$dest/references"
   cp "$PKG_DIR/SKILL.md" "$dest/"
   cp "$PKG_DIR/.env.example" "$dest/"
+  cp "$PKG_DIR/references/"*.md "$dest/references/"
   cp "$PKG_DIR/scripts/jira-api.sh" "$dest/scripts/"
   cp "$PKG_DIR/scripts/gh-pr.sh" "$dest/scripts/"
   chmod +x "$dest/scripts/"*.sh
@@ -82,7 +83,7 @@ install_to() {
   fi
 
   if $is_upgrade; then
-    echo "  ↑ Upgraded $dest ($label) — .env preserved"
+    echo "  ↑ Upgraded $dest ($label) — .env and LOCAL.md preserved"
     if [[ -f "$dest/scripts/bb-pr.sh" ]]; then
       echo "    ! scripts/bb-pr.sh is obsolete (Bitbucket support was removed). Delete it when convenient."
     fi
